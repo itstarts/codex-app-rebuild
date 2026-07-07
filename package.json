@@ -1,0 +1,33 @@
+{
+  "name": "codex-app-rebuild",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal macOS arm64 Codex Desktop rebuild toolchain",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/itstarts/codex-app-rebuild.git"
+  },
+  "bugs": {
+    "url": "https://github.com/itstarts/codex-app-rebuild/issues"
+  },
+  "homepage": "https://github.com/itstarts/codex-app-rebuild#readme",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "sync:mac": "node scripts/sync-upstream-mac.js",
+    "patch": "node scripts/patch-all-minimal.js",
+    "patch:check": "node scripts/patch-all-minimal.js --check",
+    "build:mac-arm64": "node scripts/build-mac-arm64.js",
+    "appcast": "node scripts/generate-appcast.js",
+    "verify": "node scripts/verify-build.js"
+  },
+  "dependencies": {
+    "@electron/asar": "4.1.2",
+    "acorn": "8.16.0",
+    "fast-xml-parser": "5.5.9"
+  }
+}

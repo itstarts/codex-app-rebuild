@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <item>
+      <title>26.623.101652</title>
+      <sparkle:shortVersionString>26.623.101652</sparkle:shortVersionString>
+      <sparkle:version>1272</sparkle:version>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://persistent.oaistatic.com/codex-app-prod/Codex.zip" length="1" type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,15 @@
+node_modules/
+src/
+out/
+.cache/
+.superpowers/
+*.log
+.DS_Store
+.env
+.env.*
+*.app
+*.zip
+*.dmg
+config/sparkle/private-*.txt
+config/sparkle/*.p8
+config/sparkle/*.pem

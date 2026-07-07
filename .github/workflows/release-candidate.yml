@@ -1,0 +1,353 @@
+name: Release Candidate
+
+on:
+  schedule:
+    # 07:00 Asia/Shanghai, daily. GitHub cron uses UTC.
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+    inputs:
+      release_mode:
+        description: "Output mode: upload artifact only, create/update a draft release, or publish latest."
+        required: true
+        type: choice
+        default: latest-release
+        options:
+          - artifact-only
+          - draft-release
+          - latest-release
+      rebuild_build_number:
+        description: "Optional fixed 16-digit REBUILD_BUILD_NUMBER. Leave empty to generate YYYYMMDDHHMMSS00."
+        required: false
+        type: string
+      rebuild_previous_max_build_number:
+        description: "Optional known previous max build number for first-release or feed recovery cases."
+        required: false
+        type: string
+      allow_no_previous_release:
+        description: "Allow first release when no previous appcast can be read."
+        required: true
+        type: boolean
+        default: false
+      force_build:
+        description: "Build even when the official version already has a rebuild appcast."
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: codex-rebuild-release-candidate
+  cancel-in-progress: false
+
+jobs:
+  check-official-update:
+    name: Check official Codex update
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      should_promote: ${{ steps.check.outputs.should_promote }}
+      reason: ${{ steps.check.outputs.reason }}
+      official_version: ${{ steps.check.outputs.official_version }}
+      official_build: ${{ steps.check.outputs.official_build }}
+      official_update_key: ${{ steps.check.outputs.official_update_key }}
+      promote_tag: ${{ steps.check.outputs.promote_tag }}
+      known_version_count: ${{ steps.check.outputs.known_version_count }}
+      known_update_count: ${{ steps.check.outputs.known_update_count }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check official update status
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REBUILD_FORCE_BUILD: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_build == 'true' && '1' || '' }}
+        run: node scripts/check-official-update.js
+
+  promote-release:
+    name: Promote existing release to latest
+    needs: check-official-update
+    if: ${{ needs.check-official-update.outputs.should_promote == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_mode != 'artifact-only')) }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Promote release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROMOTE_TAG: ${{ needs.check-official-update.outputs.promote_tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PROMOTE_TAG:-}" ]; then
+            echo "PROMOTE_TAG is required when should_promote is true." >&2
+            exit 1
+          fi
+
+          github_api() {
+            curl --fail-with-body -sS -L \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$@"
+          }
+
+          release_json="$(github_api "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases?per_page=100" | PROMOTE_TAG="$PROMOTE_TAG" node -e 'const fs = require("node:fs"); const releases = JSON.parse(fs.readFileSync(0, "utf8")); const release = releases.find((item) => item.tag_name === process.env.PROMOTE_TAG); if (release) process.stdout.write(JSON.stringify(release));')"
+          if [ -z "$release_json" ]; then
+            echo "Release ${PROMOTE_TAG} was selected for promotion but was not found." >&2
+            exit 1
+          fi
+
+          release_id="$(printf '%s' "$release_json" | node -e 'const fs = require("node:fs"); const release = JSON.parse(fs.readFileSync(0, "utf8")); process.stdout.write(String(release.id));')"
+          publish_payload="$(node -e 'process.stdout.write(JSON.stringify({ draft: false, prerelease: false, make_latest: "true" }));')"
+          github_api -X PATCH --data "$publish_payload" "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}" >/dev/null
+          echo "Promoted ${PROMOTE_TAG} to latest."
+
+  build:
+    name: Build macOS arm64 release candidate
+    needs: check-official-update
+    if: ${{ needs.check-official-update.outputs.should_build == 'true' }}
+    runs-on: macos-15
+    permissions:
+      contents: read
+    outputs:
+      release_tag: ${{ steps.release-metadata.outputs.release_tag }}
+      zip_name: ${{ steps.release-metadata.outputs.zip_name }}
+      upstream_version: ${{ steps.release-metadata.outputs.upstream_version }}
+      upstream_build: ${{ steps.release-metadata.outputs.upstream_build }}
+      rebuild_build_number: ${{ steps.release-metadata.outputs.rebuild_build_number }}
+    env:
+      SPARKLE_VERSION: "2.9.4"
+      SPARKLE_SHA256: "ce89daf967db1e1893ed3ebd67575ed82d3902563e3191ca92aaec9164fbdef9"
+      SPARKLE_URL: "https://github.com/sparkle-project/Sparkle/releases/download/2.9.4/Sparkle-2.9.4.tar.xz"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Install Sparkle tools
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          install_dir="$RUNNER_TEMP/sparkle-${SPARKLE_VERSION}"
+          curl -fsSL "$SPARKLE_URL" -o "$archive"
+          echo "${SPARKLE_SHA256}  ${archive}" | shasum -a 256 -c -
+          mkdir -p "$install_dir"
+          tar -xJf "$archive" -C "$install_dir"
+          test -x "$install_dir/bin/sign_update"
+          echo "SPARKLE_SIGN_UPDATE=$install_dir/bin/sign_update" >> "$GITHUB_ENV"
+
+      - name: Write Sparkle private key file
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SPARKLE_PRIVATE_KEY:-}" ]; then
+            echo "Repository secret SPARKLE_PRIVATE_KEY is required to sign the update archive." >&2
+            exit 1
+          fi
+          private_key_file="$RUNNER_TEMP/sparkle-private-ed-key.txt"
+          umask 077
+          printf '%s\n' "$SPARKLE_PRIVATE_KEY" > "$private_key_file"
+          echo "SPARKLE_PRIVATE_KEY_FILE=$private_key_file" >> "$GITHUB_ENV"
+
+      - name: Validate Sparkle public key
+        run: node -e 'const {readPublicKey}=require("./scripts/patch-update-channel"); readPublicKey(); console.log("Sparkle public key ok")'
+
+      - name: Sync and patch upstream app
+        run: |
+          set -euo pipefail
+          npm run sync:mac
+          npm run patch:check
+          npm run patch
+
+      - name: Compute release metadata
+        id: release-metadata
+        env:
+          INPUT_REBUILD_BUILD_NUMBER: ${{ github.event.inputs.rebuild_build_number || '' }}
+          INPUT_REBUILD_PREVIOUS_MAX_BUILD_NUMBER: ${{ github.event.inputs.rebuild_previous_max_build_number || '' }}
+          INPUT_ALLOW_NO_PREVIOUS_RELEASE: ${{ github.event.inputs.allow_no_previous_release || 'false' }}
+        run: |
+          set -euo pipefail
+          upstream_version="$(node -p 'require("./src/mac-arm64/upstream-metadata.json").upstreamVersion')"
+          upstream_build="$(node -p 'require("./src/mac-arm64/upstream-metadata.json").upstreamBuild')"
+          if [ -n "${INPUT_REBUILD_BUILD_NUMBER:-}" ]; then
+            rebuild_build_number="$INPUT_REBUILD_BUILD_NUMBER"
+            REBUILD_BUILD_NUMBER="$rebuild_build_number" node -e 'const {validateBuildNumber}=require("./scripts/lib/version-utils"); validateBuildNumber(process.env.REBUILD_BUILD_NUMBER, "REBUILD_BUILD_NUMBER")'
+          else
+            rebuild_build_number="$(node -e 'const {generateBuildNumber}=require("./scripts/lib/version-utils"); console.log(generateBuildNumber(new Date(), 0))')"
+          fi
+          if [ -n "${INPUT_REBUILD_PREVIOUS_MAX_BUILD_NUMBER:-}" ]; then
+            REBUILD_PREVIOUS_MAX_BUILD_NUMBER="$INPUT_REBUILD_PREVIOUS_MAX_BUILD_NUMBER" node -e 'const {validateBuildNumber}=require("./scripts/lib/version-utils"); validateBuildNumber(process.env.REBUILD_PREVIOUS_MAX_BUILD_NUMBER, "REBUILD_PREVIOUS_MAX_BUILD_NUMBER")'
+            echo "REBUILD_PREVIOUS_MAX_BUILD_NUMBER=$INPUT_REBUILD_PREVIOUS_MAX_BUILD_NUMBER" >> "$GITHUB_ENV"
+          fi
+          if [ "$INPUT_ALLOW_NO_PREVIOUS_RELEASE" = "true" ]; then
+            echo "REBUILD_ALLOW_NO_PREVIOUS_RELEASE=1" >> "$GITHUB_ENV"
+          fi
+
+          release_tag="v${upstream_version}-rebuild.${rebuild_build_number}"
+          zip_name="Codex-rebuild-darwin-arm64-${upstream_version}-${rebuild_build_number}.zip"
+          release_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${release_tag}/${zip_name}"
+
+          echo "REBUILD_BUILD_NUMBER=$rebuild_build_number" >> "$GITHUB_ENV"
+          echo "REBUILD_SHORT_VERSION=$upstream_version" >> "$GITHUB_ENV"
+          echo "REBUILD_UPSTREAM_BUILD=$upstream_build" >> "$GITHUB_ENV"
+          echo "REBUILD_RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+          echo "REBUILD_ZIP_NAME=$zip_name" >> "$GITHUB_ENV"
+          echo "REBUILD_RELEASE_URL=$release_url" >> "$GITHUB_ENV"
+
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "zip_name=$zip_name" >> "$GITHUB_OUTPUT"
+          echo "upstream_version=$upstream_version" >> "$GITHUB_OUTPUT"
+          echo "upstream_build=$upstream_build" >> "$GITHUB_OUTPUT"
+          echo "rebuild_build_number=$rebuild_build_number" >> "$GITHUB_OUTPUT"
+
+      - name: Build release zip
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npm run build:mac-arm64
+
+      - name: Generate Sparkle appcast
+        run: |
+          set -euo pipefail
+          REBUILD_ZIP_PATH="out/release/${REBUILD_ZIP_NAME}" npm run appcast
+          test -s "out/release/${REBUILD_ZIP_NAME}"
+          test -s "out/release/appcast-darwin-arm64.xml"
+          grep "$REBUILD_BUILD_NUMBER" "out/release/appcast-darwin-arm64.xml"
+          grep "$REBUILD_ZIP_NAME" "out/release/appcast-darwin-arm64.xml"
+
+      - name: Write release metadata artifact
+        run: |
+          set -euo pipefail
+          mkdir -p out/release
+          {
+            echo "RELEASE_TAG=$REBUILD_RELEASE_TAG"
+            echo "ZIP_NAME=$REBUILD_ZIP_NAME"
+            echo "UPSTREAM_VERSION=$REBUILD_SHORT_VERSION"
+            echo "UPSTREAM_BUILD=$REBUILD_UPSTREAM_BUILD"
+            echo "REBUILD_BUILD_NUMBER=$REBUILD_BUILD_NUMBER"
+          } > out/release/release-metadata.env
+
+      - name: Upload release candidate artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: codex-rebuild-${{ steps.release-metadata.outputs.rebuild_build_number }}
+          path: |
+            out/release/${{ steps.release-metadata.outputs.zip_name }}
+            out/release/appcast-darwin-arm64.xml
+            out/release/release-metadata.env
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build
+    if: ${{ needs.build.result == 'success' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_mode != 'artifact-only')) }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download release candidate artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: codex-rebuild-${{ needs.build.outputs.rebuild_build_number }}
+          path: release-artifacts
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+          ZIP_NAME: ${{ needs.build.outputs.zip_name }}
+          UPSTREAM_VERSION: ${{ needs.build.outputs.upstream_version }}
+          UPSTREAM_BUILD: ${{ needs.build.outputs.upstream_build }}
+          REBUILD_BUILD_NUMBER: ${{ needs.build.outputs.rebuild_build_number }}
+          RELEASE_MODE: ${{ github.event_name == 'schedule' && 'latest-release' || github.event.inputs.release_mode }}
+        run: |
+          set -euo pipefail
+          release_mode="${RELEASE_MODE:-latest-release}"
+          zip_path="$(find release-artifacts -type f -name "$ZIP_NAME" -print -quit)"
+          appcast_path="$(find release-artifacts -type f -name appcast-darwin-arm64.xml -print -quit)"
+          test -s "$zip_path"
+          test -s "$appcast_path"
+
+          github_api() {
+            curl --fail-with-body -sS -L \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$@"
+          }
+
+          json_prop() {
+            node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); const value = data[process.argv[1]]; if (value !== undefined && value !== null) process.stdout.write(String(value));' "$1"
+          }
+
+          release_json="$(github_api "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases?per_page=100" | RELEASE_TAG="$RELEASE_TAG" node -e 'const fs = require("node:fs"); const releases = JSON.parse(fs.readFileSync(0, "utf8")); const release = releases.find((item) => item.tag_name === process.env.RELEASE_TAG); if (release) process.stdout.write(JSON.stringify(release));')"
+          if [ -n "$release_json" ]; then
+            release_id="$(printf '%s' "$release_json" | json_prop id)"
+            existing_draft="$(printf '%s' "$release_json" | json_prop draft)"
+            if [ "$release_mode" = "draft-release" ] && [ "$existing_draft" != "true" ]; then
+              echo "Release ${RELEASE_TAG} already exists and is not a draft; refusing to overwrite published assets." >&2
+              exit 1
+            fi
+          else
+            release_notes="Codex-rebuild ${UPSTREAM_VERSION} upstream build ${UPSTREAM_BUILD} (${REBUILD_BUILD_NUMBER})"
+            create_payload="$(RELEASE_NOTES="$release_notes" node -e 'process.stdout.write(JSON.stringify({ tag_name: process.env.RELEASE_TAG, target_commitish: process.env.GITHUB_SHA, name: process.env.RELEASE_TAG, body: process.env.RELEASE_NOTES, draft: true, prerelease: false, make_latest: "false" }));')"
+            release_json="$(github_api -X POST --data "$create_payload" "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases")"
+            release_id="$(printf '%s' "$release_json" | json_prop id)"
+          fi
+
+          delete_existing_asset() {
+            asset_name="$1"
+            assets_json="$(github_api "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100")"
+            asset_id="$(printf '%s' "$assets_json" | ASSET_NAME="$asset_name" node -e 'const fs = require("node:fs"); const assets = JSON.parse(fs.readFileSync(0, "utf8")); const asset = assets.find((item) => item.name === process.env.ASSET_NAME); if (asset) process.stdout.write(String(asset.id));')"
+            if [ -n "$asset_id" ]; then
+              github_api -X DELETE "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" >/dev/null
+            fi
+          }
+
+          upload_asset() {
+            asset_path="$1"
+            asset_name="$(basename "$asset_path")"
+            encoded_name="$(ASSET_NAME="$asset_name" node -e 'process.stdout.write(encodeURIComponent(process.env.ASSET_NAME));')"
+            curl --fail-with-body -sS -L \
+              -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Content-Type: application/octet-stream" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              --data-binary @"$asset_path" \
+              "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=${encoded_name}" >/dev/null
+          }
+
+          delete_existing_asset "$(basename "$zip_path")"
+          upload_asset "$zip_path"
+          delete_existing_asset "$(basename "$appcast_path")"
+          upload_asset "$appcast_path"
+
+          if [ "$release_mode" = "latest-release" ]; then
+            publish_payload="$(node -e 'process.stdout.write(JSON.stringify({ draft: false, prerelease: false, make_latest: "true" }));')"
+            github_api -X PATCH --data "$publish_payload" "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}" >/dev/null
+          fi
+
+          echo "Release ${RELEASE_TAG} contains the zip and appcast in ${release_mode} mode."
