@@ -37,6 +37,8 @@ workflow 输入：
 
 schedule 触发会在发现新官方版本时自动发布 latest release。发布完成后，本地旧版 app 通过 latest appcast 检测到更新。自动发布路径包含单元测试、静态 patch 检查、构建验证、Sparkle 签名验证和 appcast 生成验证；本机交互运行时证据仍可按下方步骤在发布后复核。
 
+首次自动发布时，如果检查阶段确认当前 rebuild channel 没有任何已知 appcast，workflow 会自动允许无历史构建号首发。后续发布仍会从 latest feed 和 GitHub Releases 读取已发布最大 `sparkle:version`，并要求候选 `REBUILD_BUILD_NUMBER` 严格递增。
+
 ## 发布命令
 
 ```bash

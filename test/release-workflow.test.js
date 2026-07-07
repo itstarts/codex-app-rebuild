@@ -51,6 +51,12 @@ test("release workflow automatically publishes signed macOS arm64 Sparkle update
     /if: \$\{\{ needs\.build\.result == 'success' && \(github\.event_name == 'schedule' \|\| \(github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.release_mode != 'artifact-only'\)\) \}\}/,
   );
   assert.match(workflow, /INPUT_REBUILD_BUILD_NUMBER: \$\{\{ github\.event\.inputs\.rebuild_build_number \|\| '' \}\}/);
+  assert.match(workflow, /KNOWN_UPDATE_COUNT: \$\{\{ needs\.check-official-update\.outputs\.known_update_count \}\}/);
+  assert.match(
+    workflow,
+    /\[ "\$GITHUB_EVENT_NAME" = "schedule" \] && \[ "\$\{KNOWN_UPDATE_COUNT:-0\}" = "0" \]/,
+  );
+  assert.match(workflow, /REBUILD_ALLOW_NO_PREVIOUS_RELEASE=1/);
   assert.match(workflow, /runs-on: macos-15/);
   assert.match(workflow, /actions\/checkout@v6/);
   assert.match(workflow, /actions\/setup-node@v6/);
