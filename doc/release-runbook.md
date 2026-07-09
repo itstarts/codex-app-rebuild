@@ -17,7 +17,7 @@
 
 ## GitHub Actions 自动发布
 
-`.github/workflows/release-candidate.yml` 提供基于官方 appcast 的自动发布。workflow 在北京时间每天 7:00 读取 OpenAI 官方 macOS arm64 appcast，并同时读取本项目 latest feed 与 GitHub Releases 中的 draft/已发布 appcast。官方 `shortVersionString + sparkle:version` 已存在于已知 rebuild appcast 时，workflow 跳过构建；该官方更新缺少 rebuild appcast 时，workflow 使用 GitHub-hosted macOS arm64 runner 下载并校验 Sparkle `2.9.4` 官方归档，运行 `npm ci`、`npm test`、`npm run sync:mac`、`npm run patch:check`、`npm run patch`、`npm run build:mac-arm64` 和 `npm run appcast`，上传 zip、`appcast-darwin-arm64.xml` 和 `release-metadata.env` 作为 workflow artifact，并创建或更新同 tag 的 latest release。生成的 appcast 会记录 `codexRebuild:upstreamBuild`，用于区分相同 short version 下的官方 build 变化。
+`.github/workflows/release-candidate.yml` 提供基于官方 appcast 的自动发布。workflow 在北京时间每天 7:00 读取 OpenAI 官方 macOS arm64 appcast，并同时读取本项目 latest feed 与 GitHub Releases 中已发布的 appcast。只有 latest feed 已包含相同的官方 `shortVersionString + sparkle:version` 时才跳过构建；draft 或非 latest release 不会被直接提升为 latest。只要 latest feed 缺少该官方更新，workflow 就使用 GitHub-hosted macOS arm64 runner 重新下载上游、校验 Sparkle `2.9.4` 官方归档，并运行 `npm ci`、`npm test`、`npm run sync:mac`、`npm run patch:check`、`npm run patch`、`npm run build:mac-arm64`、`npm run appcast` 和 `npm run verify:static`。只有当前 workflow 生成的候选通过静态发布门禁后，才上传 zip、`appcast-darwin-arm64.xml` 和 `release-metadata.env` 作为 workflow artifact，并创建或更新同 tag 的 latest release。生成的 appcast 会记录 `codexRebuild:upstreamBuild`，用于区分相同 short version 下的官方 build 变化。
 
 GitHub `schedule` 事件只在默认分支的最新提交上运行。该 workflow 合入默认分支后，自动检测与自动发布才会按计划执行。
 
@@ -35,7 +35,7 @@ workflow 输入：
 - `allow_no_previous_release`：首次发布且没有可读取历史 appcast 时才设为 true。
 - `force_build`：手动触发时即使官方版本已存在 rebuild appcast，也生成新的候选构建。
 
-schedule 触发会在发现新官方版本时自动发布 latest release。发布完成后，本地旧版 app 通过 latest appcast 检测到更新。自动发布路径包含单元测试、静态 patch 检查、构建验证、Sparkle 签名验证和 appcast 生成验证；本机交互运行时证据仍可按下方步骤在发布后复核。
+schedule 触发会在发现 latest feed 缺少当前官方更新时重新构建并自动发布 latest release，不复用或直接推广历史 draft/非 latest 候选。发布完成后，本地旧版 app 通过 latest appcast 检测到更新。自动发布路径包含单元测试、静态 patch 检查、三模块 updater 哈希门禁、构建验证、Sparkle 签名验证和 appcast 生成验证；本机交互运行时证据仍可按下方步骤在发布后复核。
 
 首次自动发布时，如果检查阶段确认当前 rebuild channel 没有任何已知 appcast，workflow 会自动允许无历史构建号首发。后续发布仍会从 latest feed 和 GitHub Releases 读取已发布最大 `sparkle:version`，并要求候选 `REBUILD_BUILD_NUMBER` 严格递增。
 
@@ -91,6 +91,7 @@ REBUILD_ZIP_PATH="out/release/${ZIP_NAME}" \
 REBUILD_RELEASE_URL="${REBUILD_RELEASE_URL}" \
 npm run appcast
 test -s "out/release/appcast-darwin-arm64.xml"
+npm run verify:static
 
 mkdir -p out/verify
 # 用发布产物 out/mac-arm64/Codex-rebuild.app 捕获 Fast 请求体并保存为 out/verify/fast-request.json
@@ -129,7 +130,7 @@ grep "${ZIP_NAME}" /tmp/codex-rebuild-appcast.xml
 
 ## 运行时证据与验证
 
-`npm run verify` 是 GitHub Release 上传前的发布门禁。它除静态检查外，还要求运行时请求证据存在：
+`npm run verify:static` 是自动发布上传前的强制静态门禁，不依赖请求抓包文件；它验证应用身份、ASAR、三模块 updater 组合哈希、Sparkle/appcast、codesign 和构建号。`npm run verify` 在相同静态检查之外，还要求运行时请求证据存在：
 
 - `out/verify/fast-request.json`
 - `out/verify/standard-request.json`

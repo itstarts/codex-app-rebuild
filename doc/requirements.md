@@ -56,7 +56,7 @@
    - 修改 `CFBundleIdentifier` 为 `io.github.itstarts.codex-rebuild`。
    - app bundle 目录名必须为 `Codex-rebuild.app`。
    - `CFBundleName` 和 `CFBundleDisplayName` 必须为 `Codex-rebuild`。
-   - 当前阶段保留 `CFBundleExecutable` 为上游值 `Codex`，不重命名 `Contents/MacOS/Codex`。
+   - 当前阶段保留上游 `CFBundleExecutable` 及其对应的 `Contents/MacOS/<CFBundleExecutable>`，不重命名主可执行文件。
    - 嵌套 helper app 的 bundle id 必须改到 `io.github.itstarts.codex-rebuild` 命名空间下，避免和官方 Codex helper 冲突。
    - 默认使用 `codesign --sign - --force --deep` 进行 ad-hoc 签名。
    - 允许通过环境变量指定本机自签证书身份。
@@ -99,9 +99,11 @@
 ### R1. 官方资源同步
 
 - 系统必须从官方 macOS arm64 appcast 获取版本信息。
-- 系统必须下载官方 `Codex.app` 包并提取 `Contents/Resources/app.asar`。
+- 系统必须下载官方 macOS app zip，并在归档中定位唯一一个 `Contents/Resources/app.asar` 为普通文件的外层 `.app`；不得进入任何 `.app` 继续搜索嵌套 helper app。
+- 主 app、`app.asar`、`Info.plist` 和主可执行文件的路径组件不得包含符号链接，解析后的真实路径必须保持在候选 app 内。
+- 系统必须读取该 app 的 `CFBundleExecutable`，确认其为 basename，且对应 `Contents/MacOS/<CFBundleExecutable>` 为可执行的普通文件，并将名称记录到上游元数据。
 - 系统必须保留官方 `app.asar.unpacked` 和必要资源文件。
-- 下载失败时必须停止构建并输出失败原因。
+- 下载失败、候选 app 缺失或不唯一、主可执行文件无效时必须停止构建并输出失败原因。
 
 ### R2. Patch 执行
 
@@ -116,6 +118,8 @@
 - 构建后的 app 必须在非 ChatGPT authMethod 下显示 Fast/Standard 速度选项。
 - UI 当前选择为 Fast 时，请求层必须发送 `service_tier` 或上游当前等价字段为 `fast`，或保持上游 Fast 等价值；当前上游 Fast 等价值为 `priority`。
 - UI 当前选择为 Standard 时，请求层必须发送 `service_tier` 或上游当前等价字段为 `standard`，或保持官方 Standard 等价行为。
+- 对已登记的上游版本/build，必须用原始 ASAR 哈希、关键模块逐文件哈希和 AST 结构证据证明官方原生 tier 链路；任一证据变化时必须失败，且不得降级到旧扫描逻辑。
+- 版本绑定校验通过时不得修改请求 tier 构造代码；请求文本 patch 命中数必须为零。
 - 如果上游字段名变化，patch 必须失败并提示人工复核。
 - 验证必须包含一次可观察请求检查：通过本地 mock API、代理日志或等价请求捕获机制分别证明 Fast 和 Standard 两种选择产生不同的请求 tier。
 
@@ -147,6 +151,7 @@
 - 用户点击更新按钮后，允许系统弹出权限确认或密码输入。
 - 更新成功后，新 app 仍必须保持同一 bundle id、app 名、feed URL、Sparkle public key、`CFBundleVersion` 递增策略。
 - 静态验证必须证明 `shouldIncludeSparkle` 和 `shouldIncludeUpdater` 没有被 patch 成固定 false。
+- updater definition、build-flavor 和主进程 consumer 必须共同匹配已人工复核的源文件 SHA-256 组合；任一模块、CommonJS loader 或 `process.env` 使用方式变化时必须失败并重新评审。
 
 ### R7. 签名和安全边界
 
@@ -171,7 +176,7 @@
 - `test -d out/mac-arm64/Codex-rebuild.app` 成立。
 - `plutil` 检查 `CFBundleIdentifier` 为 `io.github.itstarts.codex-rebuild`。
 - `plutil` 检查 `CFBundleName` 和 `CFBundleDisplayName` 为 `Codex-rebuild`。
-- `plutil` 检查 `CFBundleExecutable` 为 `Codex`，且 `Contents/MacOS/Codex` 存在并可执行。
+- `plutil` 检查 `CFBundleExecutable` 等于同步元数据中的 `upstreamExecutable`，且对应 `Contents/MacOS/<upstreamExecutable>` 为可执行的普通文件。
 - `plutil` 检查所有 helper app 的 bundle id 均以 `io.github.itstarts.codex-rebuild` 开头。
 - `plutil` 检查更新 feed 指向 `https://github.com/itstarts/codex-app-rebuild/releases/latest/download/appcast-darwin-arm64.xml`。
 - `plutil` 检查 `SUPublicEDKey` 等于 `config/sparkle/public-ed-key.txt` 的内容。

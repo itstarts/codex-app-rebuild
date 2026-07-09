@@ -1,13 +1,18 @@
 #!/usr/bin/env node
 
 const fs = require("node:fs");
+const path = require("node:path");
 const acorn = require("acorn");
+const { PROJECT_ROOT, SRC_DIR, PLATFORM } = require("./lib/constants");
 const {
   walkAst,
   applyTextPatches,
   locateAsarAssetBundles,
   locateAsarBuildBundles,
 } = require("./patch-util");
+const {
+  verifyFastTierAttestation,
+} = require("./lib/fast-tier-attestation");
 
 const FAST_TIER_KEYS = new Set(["service_tier", "serviceTier", "tier"]);
 const NATIVE_SERVICE_TIER_HELPERS = new Set(["Cf"]);
@@ -2308,9 +2313,47 @@ function scanFastRequestFiles(files, check) {
   return { patched, nativeEvidence };
 }
 
-function run({ check = false } = {}) {
-  const assetBundles = locateAsarAssetBundles();
-  const buildBundles = locateAsarBuildBundles();
+function readUpstreamMetadata() {
+  return JSON.parse(
+    fs.readFileSync(path.join(SRC_DIR, PLATFORM, "upstream-metadata.json"), "utf8"),
+  );
+}
+
+function logFastTierAttestation(attestation) {
+  if (!attestation.required) {
+    console.log("[fast-attestation] unknown upstream identity; using legacy analysis");
+    return;
+  }
+  console.log(
+    `[fast-attestation] upstream=${attestation.manifest.upstreamVersion}/${attestation.manifest.upstreamBuild} appAsarSha256=${attestation.actualAsarSha256}`,
+  );
+  for (const [role, record] of attestation.roles) {
+    console.log(
+      `[fast-attestation] role=${role} path=${record.module.path} manifest=${record.module.sha256} asar=${record.originalSha256} work=${record.workSha256}`,
+    );
+  }
+  for (const evidence of attestation.evidence) {
+    console.log(
+      `[fast-attestation] action=${evidence.action} file=${evidence.file} resolver=${evidence.resolverExport}->${evidence.resolverImport} start=${evidence.start}`,
+    );
+  }
+}
+
+function runFastModePatch({
+  check = false,
+  assetBundles = locateAsarAssetBundles(),
+  buildBundles = locateAsarBuildBundles(),
+  metadata = readUpstreamMetadata(),
+  manifests,
+  projectRoot = PROJECT_ROOT,
+} = {}) {
+  const attestationOptions = { metadata, projectRoot };
+  if (manifests !== undefined) {
+    attestationOptions.manifests = manifests;
+  }
+  const attestation = verifyFastTierAttestation(attestationOptions);
+  logFastTierAttestation(attestation);
+
   const gateTotal = patchFiles(
     assetBundles,
     collectFastGatePatches,
@@ -2326,11 +2369,24 @@ function run({ check = false } = {}) {
     throw new Error("No Fast mode auth gate patch target found");
   }
 
-  if (request.patched === 0 && request.nativeEvidence === 0) {
+  if (attestation.required) {
+    if (request.patched !== 0) {
+      throw new Error("Attested Fast tier request implementation must not be text-patched");
+    }
+    const actions = new Set(attestation.evidence.map((item) => item.action));
+    if (!actions.has("start-conversation") || !actions.has("start-turn-for-host")) {
+      throw new Error("Attested Fast tier evidence must cover conversation and turn requests");
+    }
+  } else if (request.patched === 0 && request.nativeEvidence === 0) {
     throw new Error(
       "No Fast mode request tier patch target or native fast/standard evidence found",
     );
   }
+  return { gateTotal, request, attestation };
+}
+
+function run({ check = false } = {}) {
+  return runFastModePatch({ check });
 }
 
 if (require.main === module) {
@@ -2341,5 +2397,7 @@ module.exports = {
   collectFastGatePatches,
   collectFastRequestPatches,
   collectFastRequestEvidence,
+  runFastModePatch,
+  verifyFastTierAttestation,
   run,
 };

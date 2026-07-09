@@ -61,37 +61,28 @@ async function resolveOfficialUpdateStatus({
   const releaseXmls =
     releaseAssetXmls !== undefined
       ? normalizeReleaseAssetXmls(releaseAssetXmls)
-      : await fetchGithubReleaseAppcastXmls({ includeDrafts: true });
-  let promoteTag = "";
+      : await fetchGithubReleaseAppcastXmls();
   for (const releaseAsset of releaseXmls) {
-    addKnownAppcast(knownVersions, knownUpdateKeys, releaseAsset.xml);
-    const releaseUpdateKeys = new Set();
-    addKnownAppcast(new Set(), releaseUpdateKeys, releaseAsset.xml);
-    if (!promoteTag && releaseUpdateKeys.has(officialKey)) {
-      promoteTag = releaseAsset.tagName || "";
+    if (releaseAsset.draft) {
+      continue;
     }
+    addKnownAppcast(knownVersions, knownUpdateKeys, releaseAsset.xml);
   }
 
   const latestHasOfficialUpdate = latestUpdateKeys.has(officialKey);
-  const anyReleaseHasOfficialUpdate = knownUpdateKeys.has(officialKey);
-  const shouldPromote = Boolean(!forceBuild && !latestHasOfficialUpdate && anyReleaseHasOfficialUpdate);
-  const shouldBuild = Boolean(forceBuild || (!latestHasOfficialUpdate && !anyReleaseHasOfficialUpdate));
+  const shouldBuild = Boolean(forceBuild || !latestHasOfficialUpdate);
   const reason = forceBuild
     ? "force_build"
     : latestHasOfficialUpdate
       ? "official_update_already_latest"
-      : anyReleaseHasOfficialUpdate
-        ? "official_update_has_rebuild_not_latest"
-        : "official_update_missing_rebuild";
+      : "official_update_missing_latest";
 
   return {
     shouldBuild,
-    shouldPromote,
     reason,
     officialVersion: official.version,
     officialBuild: official.build,
     officialUpdateKey: officialKey,
-    promoteTag,
     knownVersions: [...knownVersions].sort(),
     knownUpdateKeys: [...knownUpdateKeys].sort(),
   };
@@ -106,12 +97,10 @@ function writeGithubOutput(status, outputFile = process.env.GITHUB_OUTPUT) {
     outputFile,
     [
       `should_build=${status.shouldBuild ? "true" : "false"}`,
-      `should_promote=${status.shouldPromote ? "true" : "false"}`,
       `reason=${status.reason}`,
       `official_version=${status.officialVersion}`,
       `official_build=${status.officialBuild || ""}`,
       `official_update_key=${status.officialUpdateKey || ""}`,
-      `promote_tag=${status.promoteTag || ""}`,
       `known_version_count=${status.knownVersions.length}`,
       `known_update_count=${status.knownUpdateKeys.length}`,
     ].join("\n") + "\n",

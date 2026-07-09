@@ -14,6 +14,7 @@ const {
 } = require("./lib/constants");
 const { ensureDir, readText, run, sha256File } = require("./lib/fs-utils");
 const { packAsar, computeAsarHeaderHash } = require("./lib/asar-utils");
+const { assertBundleExecutable } = require("./lib/app-bundle-utils");
 const { plutilGet, plutilSet } = require("./lib/plist-utils");
 const {
   assertBuildNumberGreater,
@@ -163,6 +164,7 @@ function verifyUpstreamMetadata(metadata) {
   if (!fs.existsSync(asarPath)) {
     throw new Error(`upstream app.asar not found: ${asarPath}`);
   }
+  assertBundleExecutable(appPath, metadata.upstreamExecutable);
   if (
     metadata.archiveSha256 &&
     fs.existsSync(archivePath) &&
@@ -205,6 +207,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
 
   const infoPlist = path.join(outApp, "Contents", "Info.plist");
   updateAsarIntegrity(infoPlist, computeAsarHeaderHash(asarPath));
+  assertBundleExecutable(outApp, metadata.upstreamExecutable);
 
   run("codesign", ["--remove-signature", outApp], { stdio: "pipe" });
   run("codesign", ["--sign", env.CODESIGN_IDENTITY || "-", "--force", "--deep", outApp], {

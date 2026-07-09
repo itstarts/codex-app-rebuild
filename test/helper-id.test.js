@@ -74,6 +74,7 @@ function createAppFixture() {
     CFBundleIdentifier: "com.openai.codex",
     CFBundleName: "Codex",
     CFBundleDisplayName: "Codex",
+    CFBundleExecutable: "ChatGPT",
     CFBundleShortVersionString: "26.623.101652",
     CFBundleVersion: "4674",
     SUPublicEDKey: "official-key",
@@ -90,6 +91,10 @@ function createAppFixture() {
   writePlist(helperInfoPath(appPath, "Codex (Alerts)"), {
     CFBundleIdentifier: "com.openai.codex.framework.AlertNotificationService",
   });
+  const executable = path.join(appPath, "Contents", "MacOS", "ChatGPT");
+  fs.mkdirSync(path.dirname(executable), { recursive: true });
+  fs.writeFileSync(executable, "fixture");
+  fs.chmodSync(executable, 0o755);
   return appPath;
 }
 
@@ -101,12 +106,20 @@ function createUpstreamMetadataFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-upstream-metadata-"));
   const appPath = path.join(root, "Codex.app");
   const asarPath = path.join(appPath, "Contents", "Resources", "app.asar");
+  const executablePath = path.join(appPath, "Contents", "MacOS", "ChatGPT");
   const asarBytes = Buffer.from("synthetic asar");
   fs.mkdirSync(path.dirname(asarPath), { recursive: true });
   fs.writeFileSync(asarPath, asarBytes);
+  writePlist(path.join(appPath, "Contents", "Info.plist"), {
+    CFBundleExecutable: "ChatGPT",
+  });
+  fs.mkdirSync(path.dirname(executablePath), { recursive: true });
+  fs.writeFileSync(executablePath, "fixture");
+  fs.chmodSync(executablePath, 0o755);
   return {
     platform: "mac-arm64",
     upstreamVersion: "26.623.101652",
+    upstreamExecutable: "ChatGPT",
     archivePath: path.join(root, "missing-upstream.zip"),
     archiveSha256: "not-used-when-archive-is-absent",
     appPath,
@@ -172,6 +185,7 @@ test("rewriteAppIdentity writes main app metadata and rewrites helper ids", () =
   assert.equal(plistRaw(infoPlist, "CFBundleIdentifier"), BUNDLE_ID);
   assert.equal(plistRaw(infoPlist, "CFBundleName"), APP_NAME);
   assert.equal(plistRaw(infoPlist, "CFBundleDisplayName"), APP_NAME);
+  assert.equal(plistRaw(infoPlist, "CFBundleExecutable"), "ChatGPT");
   assert.equal(plistRaw(infoPlist, "CFBundleShortVersionString"), "26.999.100001");
   assert.equal(plistRaw(infoPlist, "CFBundleVersion"), "2026070601020304");
   assert.equal(plistRaw(infoPlist, "SUFeedURL"), FEED_URL);
@@ -215,4 +229,24 @@ test("verifyUpstreamMetadata allows absent archive when app.asar hash matches", 
   const metadata = createUpstreamMetadataFixture();
 
   assert.doesNotThrow(() => verifyUpstreamMetadata(metadata));
+});
+
+test("verifyUpstreamMetadata rejects missing upstreamExecutable", () => {
+  const metadata = createUpstreamMetadataFixture();
+  delete metadata.upstreamExecutable;
+
+  assert.throws(
+    () => verifyUpstreamMetadata(metadata),
+    /expected bundle executable name is required/,
+  );
+});
+
+test("verifyUpstreamMetadata rejects executable metadata mismatch", () => {
+  const metadata = createUpstreamMetadataFixture();
+  metadata.upstreamExecutable = "Codex";
+
+  assert.throws(
+    () => verifyUpstreamMetadata(metadata),
+    /bundle executable mismatch: expected Codex, got ChatGPT/,
+  );
 });
