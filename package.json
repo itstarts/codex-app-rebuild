@@ -23,6 +23,7 @@
     "patch:check": "node scripts/patch-all-minimal.js --check",
     "build:mac-arm64": "node scripts/build-mac-arm64.js",
     "appcast": "node scripts/generate-appcast.js",
+    "verify:static": "node scripts/verify-build.js --static",
     "verify": "node scripts/verify-build.js"
   },
   "dependencies": {

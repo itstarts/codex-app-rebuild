@@ -6,10 +6,30 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const workflowPath = path.join(root, ".github", "workflows", "release-candidate.yml");
 const runbookPath = path.join(root, "doc", "release-runbook.md");
+const packagePath = path.join(root, "package.json");
 
 function readRequired(file) {
   assert.equal(fs.existsSync(file), true, `${path.relative(root, file)} must exist`);
   return fs.readFileSync(file, "utf8");
+}
+
+function extractYamlBlock(source, header, indent) {
+  const prefix = " ".repeat(indent);
+  const marker = `${prefix}${header}:`;
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `${header} block must exist`);
+  const tail = source.slice(start + marker.length);
+  const nextHeader = tail.search(new RegExp(`^${prefix}[^\\s-][^\\n]*:\\s*$`, "m"));
+  return source.slice(start, nextHeader === -1 ? source.length : start + marker.length + nextHeader);
+}
+
+function extractStep(job, name) {
+  const marker = `      - name: ${name}`;
+  const start = job.indexOf(marker);
+  assert.notEqual(start, -1, `${name} step must exist`);
+  const tail = job.slice(start + marker.length);
+  const nextStep = tail.indexOf("\n      - name:");
+  return job.slice(start, nextStep === -1 ? job.length : start + marker.length + nextStep);
 }
 
 test("release workflow automatically publishes signed macOS arm64 Sparkle updates", () => {
@@ -30,22 +50,14 @@ test("release workflow automatically publishes signed macOS arm64 Sparkle update
     workflow,
     /if: \$\{\{ needs\.check-official-update\.outputs\.should_build == 'true' \}\}/,
   );
+  assert.doesNotMatch(workflow, /^  promote-release:/m);
+  assert.doesNotMatch(workflow, /should_promote|promote_tag|PROMOTE_TAG/);
+  const buildJob = extractYamlBlock(workflow, "build", 2);
+  assert.match(buildJob, /needs: check-official-update/);
   assert.match(
-    workflow,
-    /promote-release:/,
+    buildJob,
+    /if: \$\{\{ needs\.check-official-update\.outputs\.should_build == 'true' \}\}/,
   );
-  assert.match(
-    workflow,
-    /if: \$\{\{ needs\.check-official-update\.outputs\.should_promote == 'true'/,
-  );
-  const promoteJob = workflow.match(/  promote-release:[\s\S]*?\n  build:/)?.[0] ?? "";
-  assert.notEqual(promoteJob, "");
-  assert.match(
-    promoteJob,
-    /github_api -X PATCH --data "\$publish_payload" "https:\/\/api\.github\.com\/repos\/\$\{GITHUB_REPOSITORY\}\/releases\/\$\{release_id\}"/,
-  );
-  assert.match(promoteJob, /PROMOTE_TAG="\$PROMOTE_TAG"/);
-  assert.doesNotMatch(promoteJob, /gh release/);
   assert.match(
     workflow,
     /if: \$\{\{ needs\.build\.result == 'success' && \(github\.event_name == 'schedule' \|\| \(github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.release_mode != 'artifact-only'\)\) \}\}/,
@@ -72,6 +84,19 @@ test("release workflow automatically publishes signed macOS arm64 Sparkle update
   assert.match(workflow, /npm run patch/);
   assert.match(workflow, /npm run build:mac-arm64/);
   assert.match(workflow, /npm run appcast/);
+  const appcastStep = buildJob.indexOf("- name: Generate Sparkle appcast");
+  const staticVerifyStep = buildJob.indexOf("- name: Verify release candidate statically");
+  const uploadStep = buildJob.indexOf("- name: Upload release candidate artifact");
+  assert.equal(appcastStep >= 0, true);
+  assert.equal(staticVerifyStep > appcastStep, true);
+  assert.equal(uploadStep > staticVerifyStep, true);
+  assert.match(
+    extractStep(buildJob, "Verify release candidate statically"),
+    /^      - name: Verify release candidate statically\n        run: npm run verify:static$/m,
+  );
+  const publishJob = extractYamlBlock(workflow, "publish-release", 2);
+  assert.match(publishJob, /needs: build/);
+  assert.match(publishJob, /needs\.build\.result == 'success'/);
   assert.match(workflow, /RELEASE_MODE: \$\{\{ github\.event_name == 'schedule' && 'latest-release' \|\| github\.event\.inputs\.release_mode \}\}/);
   assert.doesNotMatch(workflow, /\bgh release\b/);
   assert.doesNotMatch(workflow, /gh release create/);
@@ -102,6 +127,9 @@ test("release workflow automatically publishes signed macOS arm64 Sparkle update
   assert.match(workflow, /\[ "\$existing_draft" != "true" \]/);
   assert.match(workflow, /refusing to overwrite published assets/);
   assert.doesNotMatch(workflow, /SPARKLE_PRIVATE_KEY[^\n]*upload-artifact/);
+
+  const packageJson = JSON.parse(readRequired(packagePath));
+  assert.equal(packageJson.scripts["verify:static"], "node scripts/verify-build.js --static");
 });
 
 test("release runbook documents GitHub Actions automatic update boundaries", () => {
@@ -115,4 +143,5 @@ test("release runbook documents GitHub Actions automatic update boundaries", () 
   assert.match(runbook, /自动发布 latest/);
   assert.match(runbook, /本地旧版 app/);
   assert.match(runbook, /检测到更新/);
+  assert.match(runbook, /npm run verify:static/);
 });

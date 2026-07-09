@@ -19,7 +19,7 @@ flowchart TD
   A["sync-upstream-mac-arm64"] --> B["extract app.asar to work/asar"]
   B --> C["run minimal patch manifest"]
   C --> D["pack app.asar"]
-  D --> E["copy upstream Codex.app to out/mac-arm64/Codex-rebuild.app"]
+  D --> E["copy normalized upstream app bundle to out/mac-arm64/Codex-rebuild.app"]
   E --> F["replace app.asar and update ElectronAsarIntegrity"]
   F --> G["patch Info.plist identity and Sparkle config"]
   G --> H["codesign app"]
@@ -85,9 +85,12 @@ out/
 - 解析最新 item，取得上游版本、build、最低系统版本、下载 URL。
 - 下载官方 zip 到缓存目录。
 - 使用 `ditto -xk` 解压，保留 macOS bundle 结构。
-- 找到 `Codex.app/Contents/Resources`。
+- 定位唯一一个 `Contents/Resources/app.asar` 为普通文件的外层 `.app`；遇到 `.app` 后停止向内递归，避免把 helper app 当成主 app。
+- `Contents`、`Resources`、`MacOS`、`Info.plist`、`app.asar` 和主可执行文件的路径组件不得包含符号链接，realpath 必须保持在候选 app 内。
+- 从主 app 的 `Info.plist` 读取 `CFBundleExecutable`，确认其为 basename，且对应 `Contents/MacOS/<CFBundleExecutable>` 为可执行的普通文件。
 - 提取 `app.asar` 到 `src/mac-arm64/_asar`。
 - 复制 `app.asar.unpacked` 和除 `app.asar` 外的必要资源到 `src/mac-arm64/`。
+- 将发现的主 app 规范化复制到稳定内部路径 `src/mac-arm64/upstream/Codex.app`；该路径不代表上游 bundle 的原始名称。
 
 输出：
 
@@ -105,6 +108,7 @@ out/
   "platform": "mac-arm64",
   "upstreamVersion": "26.623.101652",
   "upstreamBuild": "1272",
+  "upstreamExecutable": "ChatGPT",
   "minimumSystemVersion": "14.0",
   "downloadUrl": "https://example.invalid/Codex.zip",
   "archivePath": "src/mac-arm64/upstream/Codex-arm64.zip",
@@ -116,9 +120,9 @@ out/
 
 失败策略：
 
-- appcast 拉取失败、下载失败、找不到 `app.asar`、ASAR 解包失败时立即退出非零。
+- appcast 拉取失败、下载失败、找不到唯一主 app、主可执行文件无效、ASAR 解包失败时立即退出非零。
 - 不做静默降级到本地旧缓存；缓存只用于减少重复下载，必须能校验当前目标版本。
-- 打包阶段只能复制 `upstream-metadata.json` 指向的 `appPath`，并必须重新校验 `archiveSha256` 或 `appAsarSha256`。
+- 打包阶段只能复制 `upstream-metadata.json` 指向的 `appPath`，并必须重新校验 `archiveSha256` 或 `appAsarSha256`，以及 `upstreamExecutable` 与源 app、输出 app 的可执行文件契约。
 
 ### 2. Patch 编排模块
 
@@ -174,16 +178,16 @@ out/
    - 将函数内 `X.authMethod !== "chatgpt"` 结构替换为 `!1`。
 
 2. 请求 tier 传递
-   - 扫描 `webview/assets/*.js` 和 `.vite/build/main*.js`。
-   - 必须先定位同时包含 `fast_mode` 与 `service_tier` 的函数或对象构造；如果上游使用等价字段，必须在 patch 配置中显式登记字段名。
-   - 对模型或会话配置中的 speed/tier state 读取点建立映射：UI Fast 选项对应字符串 `fast`，UI Standard 选项对应字符串 `standard`。
-   - 对发送到后端的请求 payload 构造点执行结构化 patch，要求 payload 中的 tier 字段直接来自 UI 当前选择或经由等价映射函数产生。
-   - 如果只能找到 UI gate，找不到请求 payload 构造点，patch 必须失败。
-   - 如果请求层已原生按 UI 选择发送 `fast/standard`，patch 必须记录证据位置并保持原逻辑。
+   - 对已人工复核的上游版本/build，先校验原始 `app.asar` SHA-256，并校验五个关键模块在原始 ASAR、解包工作树和版本清单中的字节哈希完全一致。
+   - 在哈希校验通过后，使用 AST 验证 Fast=`priority`、Standard=官方默认行为、UI setter、请求 resolver，以及 `start-conversation` 和 `start-turn-for-host` 两条请求链路。
+   - 已登记版本/build 如果出现未知 ASAR 哈希、模块哈希或结构变化，必须失败且不得回退到旧扫描逻辑。
+   - 未登记的上游版本保留旧的结构化扫描兼容路径；若只能找到 UI gate，找不到请求 payload 构造点或原生 tier 证据，patch 必须失败。
+   - 通过版本绑定校验的请求层保持上游原生逻辑，且请求文本 patch 命中数必须为零。
 
 验证策略：
 
 - 静态 dry-run 输出两类规则的匹配。
+- 对版本绑定校验输出上游版本/build、原始 ASAR 哈希、五个角色模块的清单/ASAR/工作树哈希，以及两条请求 action 的 AST 证据。
 - 运行时可观察请求验证使用本地代理或 mock endpoint 捕获请求 payload，分别触发 Fast 和 Standard，确认 tier 不同。
 - 请求验证必须保存两条证据：`fast-request.json` 和 `standard-request.json`，其中 tier 字段分别可解析为 `fast` 或上游 Fast 等价值，以及 `standard` 或上游 Standard 等价值；当前上游 Fast 等价值为 `priority`。
 - 若上游字段从 `service_tier` 改名，patch 必须失败并提示人工复核。
@@ -234,13 +238,19 @@ https://github.com/itstarts/codex-app-rebuild/releases/latest/download/appcast-d
 - `SUPublicEDKey` 从 `config/sparkle/public-ed-key.txt` 读取。
 - 确认 `shouldIncludeSparkle` 和 `shouldIncludeUpdater` 没有被替换成固定 false。
 - 验证 `Contents/Frameworks/Sparkle.framework` 或上游等价 Sparkle resource 存在。
-- 在 ASAR main bundle 中定位 updater inclusion predicate，并用当前产物元数据进行静态求值或等价 AST 检查，证明 mac-arm64 prod 构建会包含 Sparkle。
+- 在 ASAR 中通过同一顶层 container 的两个 predicate、精确 CommonJS getter 和同一 consumer 的双调用链，唯一定位主进程 updater 模块；未消费的 worker 副本不作为候选。
+- updater definition、build-flavor 和主进程 consumer 三个模块必须同时命中同一组已人工复核的源文件 SHA-256；任一字节变化都必须失败并触发重新评审，不能仅凭局部 AST 或方法名调用继续放行。
+- 对 updater 模块实际 require 的 build-flavor chunk 验证 `As` 或 `qs` getter，要求最终来源为 `Dev/Agent/Nightly/InternalAlpha/PublicBeta/Prod` 六项精确值。
+- 静态求值只接受单条 return 的纯 helper，并拒绝宽松相等、参与求值的 binding、container、consumer alias 或 build-flavor namespace 被重赋值、删除、成员改写或通过别名逃逸。
+- `require`、`module.require`、`Object`、`exports`、`process` 等宿主绑定必须保持可信；updater 模块不得加载 CommonJS loader 改写加载路径，`process.env` 及其别名只允许只读使用。
+- 用当前产物元数据求值两个 predicate，证明 macOS arm64 prod 构建会包含 Sparkle；未知导出、动态 require、shadowing、歧义或结构变化均立即失败。
 
 失败策略：
 
 - public key 文件不存在或为空时失败。
 - 找不到可 patch 的 feed 字段时失败。
 - 检测到 updater disable patch 结果时失败。
+- updater CommonJS 导出/消费链、build-flavor 真实导出或纯求值证明不唯一、不完整时失败。
 - Info.plist 与 ASAR package 更新配置不一致时失败。
 
 ### 7. app 身份和打包模块
@@ -249,7 +259,7 @@ https://github.com/itstarts/codex-app-rebuild/releases/latest/download/appcast-d
 
 职责：
 
-- 复制上游 `Codex.app` 到 `out/mac-arm64/Codex-rebuild.app`。
+- 复制 `upstream-metadata.json` 指向的规范化上游 app 到 `out/mac-arm64/Codex-rebuild.app`。
 - 将 patched `_asar` pack 为新的 `app.asar`。
 - 替换 `Codex-rebuild.app/Contents/Resources/app.asar`。
 - 更新 `Info.plist` 的 `ElectronAsarIntegrity.Resources/app.asar.hash` 和 algorithm。
@@ -261,7 +271,7 @@ https://github.com/itstarts/codex-app-rebuild/releases/latest/download/appcast-d
   - `CFBundleVersion=<REBUILD_BUILD_NUMBER>`
   - `SUFeedURL=<project feed URL>`
   - `SUPublicEDKey=<project public key>`
-- 保留 `CFBundleExecutable=Codex` 和 `Contents/MacOS/Codex`。
+- 保留 `CFBundleExecutable=<upstreamExecutable>` 和对应 `Contents/MacOS/<upstreamExecutable>`，并在签名前验证其为可执行的普通文件。
 - 修改 helper app bundle id 到 `io.github.itstarts.codex-rebuild` 命名空间。
 - helper bundle id 使用确定性映射：
   - `com.openai.codex.helper` -> `io.github.itstarts.codex-rebuild.helper`
@@ -357,8 +367,8 @@ YYYYMMDDHHMMSSNN
 静态验证：
 
 - `out/mac-arm64/Codex-rebuild.app` 存在。
-- `CFBundleIdentifier`、`CFBundleName`、`CFBundleDisplayName`、`CFBundleExecutable` 符合需求。
-- `Contents/MacOS/Codex` 存在且可执行。
+- `CFBundleIdentifier`、`CFBundleName`、`CFBundleDisplayName` 符合需求。
+- `CFBundleExecutable` 等于同步元数据中的 `upstreamExecutable`，且对应 `Contents/MacOS/<upstreamExecutable>` 为可执行的普通文件。
 - helper app bundle id 均位于 `io.github.itstarts.codex-rebuild` 命名空间。
 - helper app bundle id 符合确定性映射且无重复。
 - `SUFeedURL` 指向项目 feed。

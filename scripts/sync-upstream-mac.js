@@ -6,6 +6,10 @@ const { XMLParser } = require("fast-xml-parser");
 const { PROJECT_ROOT, SRC_DIR, PLATFORM } = require("./lib/constants");
 const { ensureDir, writeText, sha256File, run } = require("./lib/fs-utils");
 const { extractAsar } = require("./lib/asar-utils");
+const {
+  findAppBundle,
+  readBundleExecutable,
+} = require("./lib/app-bundle-utils");
 
 const APPCAST_URL = "https://persistent.oaistatic.com/codex-app-prod/appcast.xml";
 
@@ -54,22 +58,6 @@ function httpGetBuffer(url) {
   });
 }
 
-function findAppBundle(root) {
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    const fullPath = path.join(root, entry.name);
-    if (entry.isDirectory() && entry.name === "Codex.app") {
-      return fullPath;
-    }
-    if (entry.isDirectory()) {
-      const nested = findAppBundle(fullPath);
-      if (nested) {
-        return nested;
-      }
-    }
-  }
-  return "";
-}
-
 async function main() {
   const srcPlatform = path.join(SRC_DIR, PLATFORM);
   const upstreamDir = path.join(srcPlatform, "upstream");
@@ -91,8 +79,9 @@ async function main() {
 
   const appPath = findAppBundle(extractDir);
   if (!appPath) {
-    throw new Error("Codex.app not found in upstream archive");
+    throw new Error("Upstream app bundle containing Contents/Resources/app.asar not found");
   }
+  const executable = readBundleExecutable(appPath);
 
   const resourcesDir = path.join(appPath, "Contents", "Resources");
   const asarPath = path.join(resourcesDir, "app.asar");
@@ -127,6 +116,7 @@ async function main() {
     platform: PLATFORM,
     upstreamVersion: info.version,
     upstreamBuild: info.build,
+    upstreamExecutable: executable.name,
     minimumSystemVersion: info.minimumSystemVersion,
     downloadUrl: info.downloadUrl,
     archivePath: path.relative(PROJECT_ROOT, archivePath),

@@ -5,6 +5,14 @@ const os = require("node:os");
 const path = require("node:path");
 const { parseAppcast, findAppBundle } = require("../scripts/sync-upstream-mac");
 
+function createAsarApp(root, relativePath) {
+  const app = path.join(root, relativePath);
+  const resources = path.join(app, "Contents", "Resources");
+  fs.mkdirSync(resources, { recursive: true });
+  fs.writeFileSync(path.join(resources, "app.asar"), "fixture");
+  return app;
+}
+
 test("parseAppcast extracts latest macOS arm64 metadata", () => {
   const xml = fs.readFileSync(path.join(__dirname, "fixtures", "appcast-arm64.xml"), "utf8");
   assert.deepEqual(parseAppcast(xml), {
@@ -15,9 +23,16 @@ test("parseAppcast extracts latest macOS arm64 metadata", () => {
   });
 });
 
-test("findAppBundle returns nested Codex.app path", () => {
+test("findAppBundle returns nested Codex.app path", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-upstream-"));
-  const nested = path.join(root, "outer", "inner", "Codex.app");
-  fs.mkdirSync(nested, { recursive: true });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const nested = createAsarApp(root, path.join("outer", "inner", "Codex.app"));
+  assert.equal(findAppBundle(root), nested);
+});
+
+test("findAppBundle returns renamed ChatGPT.app path", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-upstream-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const nested = createAsarApp(root, "ChatGPT.app");
   assert.equal(findAppBundle(root), nested);
 });
