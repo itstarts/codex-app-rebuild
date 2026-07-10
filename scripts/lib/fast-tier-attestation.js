@@ -58,6 +58,38 @@ const FAST_TIER_ATTESTATIONS = deepFreeze([
       },
     ],
   },
+  {
+    upstreamVersion: "26.707.31428",
+    upstreamBuild: "5059",
+    appAsarSha256: "cc1bebbd77b827bc9f96f89216c8e101cdfc6d8ddd886d22b7e9507167be94b8",
+    modules: [
+      {
+        role: "serviceTier",
+        path: "webview/assets/app-initial~app-main~pull-request-code-review~onboarding-page~hotkey-window-thread-page~cha~b76hmflu-y0KJWbm3.js",
+        sha256: "d4f74a3278e2bdb673809b4bdb609a5328316a74a8c983ea2bff9b29f0651afb",
+      },
+      {
+        role: "requestResolver",
+        path: "webview/assets/app-initial~app-main~pull-request-code-review~onboarding-page~hotkey-window-thread-page~cha~b76hmflu-y0KJWbm3.js",
+        sha256: "d4f74a3278e2bdb673809b4bdb609a5328316a74a8c983ea2bff9b29f0651afb",
+      },
+      {
+        role: "mainUi",
+        path: "webview/assets/app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~k0ede4gb-C17KDkOa.js",
+        sha256: "1245fed818b25823db965e7a111bc1fba3b5c699ca058de9ba839f832b5b8a99",
+      },
+      {
+        role: "uiConsumer",
+        path: "webview/assets/app-initial~app-main~new-thread-panel-page~appgen-library-page~hotkey-window-thread-page~ho~iufn7mg3-Cdmi2Vi6.js",
+        sha256: "3ff639167f02a2b7cea21fcdf37b6c441f80447ca732fc588675ad9c96692024",
+      },
+      {
+        role: "actionConsumer",
+        path: "webview/assets/review-mode-content-Bb2tYtzP.js",
+        sha256: "6aac3fc4e02f3d096fd8161719205172304437e7594465216040bc9462ce76fd",
+      },
+    ],
+  },
 ]);
 
 class FastTierAttestationError extends Error {
@@ -151,10 +183,14 @@ function validateManifests(manifests) {
     identityHashes.set(identity, hashes);
 
     if (!Array.isArray(entry.modules) || entry.modules.length !== REQUIRED_ROLES.length) {
-      fail("manifest_roles_invalid", `attestation entry ${index} must contain five modules`, "manifest");
+      fail(
+        "manifest_roles_invalid",
+        `attestation entry ${index} must contain five role mappings`,
+        "manifest",
+      );
     }
     const roles = new Set();
-    const paths = new Set();
+    const pathHashes = new Map();
     for (const module of entry.modules) {
       if (!module || typeof module !== "object" || Array.isArray(module)) {
         fail("manifest_module_invalid", `attestation entry ${index} has an invalid module`, "manifest");
@@ -164,13 +200,18 @@ function validateManifests(manifests) {
       }
       roles.add(module.role);
       validateInternalPath(module.path, `attestation role ${module.role} path`);
-      if (paths.has(module.path)) {
-        fail("manifest_path_duplicate", `duplicate attestation path ${module.path}`, "manifest");
-      }
-      paths.add(module.path);
       if (typeof module.sha256 !== "string" || !HASH_PATTERN.test(module.sha256)) {
         fail("manifest_module_hash_invalid", `attestation role ${module.role} has invalid hash`, "manifest");
       }
+      const existingHash = pathHashes.get(module.path);
+      if (existingHash !== undefined && existingHash !== module.sha256) {
+        fail(
+          "manifest_path_hash_conflict",
+          `attestation path ${module.path} has conflicting hashes`,
+          "manifest",
+        );
+      }
+      pathHashes.set(module.path, module.sha256);
     }
     if (REQUIRED_ROLES.some((role) => !roles.has(role))) {
       fail("manifest_roles_invalid", `attestation entry ${index} is missing a required role`, "manifest");

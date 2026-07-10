@@ -41,12 +41,19 @@ const REQUIRED_UPDATER_BUILD_FLAVORS = Object.freeze([
   "PublicBeta",
   "Prod",
 ]);
-// Reviewed upstream 26.707.30751 (build 5018) updater definition, flavor, and consumer chain.
+// Reviewed updater definition, flavor, and final patched consumer chains.
 const REVIEWED_UPDATER_CALL_CHAINS = Object.freeze([
+  // Upstream 26.707.30751 (build 5018), final patched ASAR.
   Object.freeze({
     definitionHash: "11a122b700594494debc0d1d4577996f47e7647ed29a4fcd9ba041e87faf1528",
     buildFlavorHash: "2dee399c386715764eb39288e47610b396cb308857df842dc0a9cfd81210343b",
     consumerHash: "49858ef6cebfe4fe72b56633a0e5508720d1b2b480e49f451984d1b3440112f8",
+  }),
+  // Upstream 26.707.31428 (build 5059), final patched ASAR.
+  Object.freeze({
+    definitionHash: "755ee00ba69271766dc8d6913fc7e51d1671717be5986fd7c531586f6c1cc1b5",
+    buildFlavorHash: "7e6d33aab29002935149edd23a0ce1afa71f4ed829e02b267c16a2265fc90618",
+    consumerHash: "68ae81f787fdf534d730f5ee85ad3645fe5ae56393f59e015f07f6d0fb5ece43",
   }),
 ]);
 const FUNCTION_NODE_TYPES = new Set([
@@ -2201,6 +2208,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  REVIEWED_UPDATER_CALL_CHAINS,
   verifyBundleExecutable,
   verifyRequestEvidence,
   verifyBuildNumberCases,

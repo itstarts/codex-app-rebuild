@@ -11,6 +11,7 @@ const {
   verifyBundleExecutable,
   verifyBuildNumberCases,
   verifyRequestEvidence,
+  REVIEWED_UPDATER_CALL_CHAINS,
   verifyUpdaterNotDisabled: verifyUpdaterNotDisabledRaw,
   verifyUpdaterNotDisabledWithReviewedCallChains,
 } = require("../scripts/verify-build");
@@ -217,6 +218,22 @@ function verifyUpdaterNotDisabled(app, asarPath) {
     [reviewedFixtureConsumers.get(asarPath)],
   );
 }
+
+test("reviewed updater chains include the current final patched upstream tuple", () => {
+  assert.ok(Array.isArray(REVIEWED_UPDATER_CALL_CHAINS));
+  assert.deepEqual(
+    REVIEWED_UPDATER_CALL_CHAINS.find(
+      (entry) =>
+        entry.definitionHash ===
+        "755ee00ba69271766dc8d6913fc7e51d1671717be5986fd7c531586f6c1cc1b5",
+    ),
+    {
+      definitionHash: "755ee00ba69271766dc8d6913fc7e51d1671717be5986fd7c531586f6c1cc1b5",
+      buildFlavorHash: "7e6d33aab29002935149edd23a0ce1afa71f4ed829e02b267c16a2265fc90618",
+      consumerHash: "68ae81f787fdf534d730f5ee85ad3645fe5ae56393f59e015f07f6d0fb5ece43",
+    },
+  );
+});
 
 test("verifyRequestEvidence requires fast and standard captured tiers", () => {
   const dir = createEvidenceDir();

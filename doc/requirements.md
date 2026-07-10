@@ -118,7 +118,7 @@
 - 构建后的 app 必须在非 ChatGPT authMethod 下显示 Fast/Standard 速度选项。
 - UI 当前选择为 Fast 时，请求层必须发送 `service_tier` 或上游当前等价字段为 `fast`，或保持上游 Fast 等价值；当前上游 Fast 等价值为 `priority`。
 - UI 当前选择为 Standard 时，请求层必须发送 `service_tier` 或上游当前等价字段为 `standard`，或保持官方 Standard 等价行为。
-- 对已登记的上游版本/build，必须用原始 ASAR 哈希、关键模块逐文件哈希和 AST 结构证据证明官方原生 tier 链路；任一证据变化时必须失败，且不得降级到旧扫描逻辑。
+- 对已登记的上游版本/build，必须用原始 ASAR 哈希、五个关键角色对应的一至多个模块逐文件哈希和 AST 结构证据证明官方原生 tier 链路；同一模块承担多个角色时必须声明相同哈希。任一证据变化时必须失败，且不得降级到旧扫描逻辑。
 - 版本绑定校验通过时不得修改请求 tier 构造代码；请求文本 patch 命中数必须为零。
 - 如果上游字段名变化，patch 必须失败并提示人工复核。
 - 验证必须包含一次可观察请求检查：通过本地 mock API、代理日志或等价请求捕获机制分别证明 Fast 和 Standard 两种选择产生不同的请求 tier。
