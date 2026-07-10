@@ -9,6 +9,9 @@ const {
   runFastModePatch,
   verifyFastTierAttestation,
 } = require("../scripts/patch-fast-mode");
+const {
+  FAST_TIER_ATTESTATIONS,
+} = require("../scripts/lib/fast-tier-attestation");
 
 const MODULES = {
   serviceTier: "webview/assets/service-tier.js",
@@ -57,6 +60,20 @@ const MODULE_SOURCES = {
     "export{send};",
   ].join(";"),
 };
+
+const SHARED_SERVICE_REQUEST_SOURCE = [
+  MODULE_SOURCES.serviceTier,
+  MODULE_SOURCES.requestResolver.replace(
+    'import{Ei as normalize,Oi as fromState,Yr as serviceTierStore,Wx as rpc}from"./service-tier.js";',
+    "",
+  ),
+].join(";");
+
+const SHARED_ACTION_SOURCE = [
+  'import{i as resolveTier,Wx as rpc}from"./service-tier.js";',
+  "async function send(scope,host,connectionForHost){let connection=connectionForHost(host);await rpc(`start-turn-for-host`,{hostId:connection.getHostId(),params:{serviceTier:await resolveTier(scope,host,null)}});await rpc(`start-conversation`,{hostId:host,serviceTier:await resolveTier(scope,host,null)})}",
+  "export{send};",
+].join(";");
 
 function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
@@ -166,6 +183,76 @@ test("version-bound Fast tier attestation proves both request actions", async (t
   const result = verifyFixture(fixture);
 
   assert.equal(result.required, true);
+  assert.deepEqual(
+    result.evidence.map((item) => item.action).sort(),
+    ["start-conversation", "start-turn-for-host"],
+  );
+});
+
+test("current upstream attestation maps five roles across four reviewed modules", () => {
+  const manifest = FAST_TIER_ATTESTATIONS.find(
+    (entry) =>
+      entry.upstreamVersion === "26.707.31428" &&
+      entry.upstreamBuild === "5059",
+  );
+
+  assert.deepEqual(manifest, {
+    upstreamVersion: "26.707.31428",
+    upstreamBuild: "5059",
+    appAsarSha256: "cc1bebbd77b827bc9f96f89216c8e101cdfc6d8ddd886d22b7e9507167be94b8",
+    modules: [
+      {
+        role: "serviceTier",
+        path: "webview/assets/app-initial~app-main~pull-request-code-review~onboarding-page~hotkey-window-thread-page~cha~b76hmflu-y0KJWbm3.js",
+        sha256: "d4f74a3278e2bdb673809b4bdb609a5328316a74a8c983ea2bff9b29f0651afb",
+      },
+      {
+        role: "requestResolver",
+        path: "webview/assets/app-initial~app-main~pull-request-code-review~onboarding-page~hotkey-window-thread-page~cha~b76hmflu-y0KJWbm3.js",
+        sha256: "d4f74a3278e2bdb673809b4bdb609a5328316a74a8c983ea2bff9b29f0651afb",
+      },
+      {
+        role: "mainUi",
+        path: "webview/assets/app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~k0ede4gb-C17KDkOa.js",
+        sha256: "1245fed818b25823db965e7a111bc1fba3b5c699ca058de9ba839f832b5b8a99",
+      },
+      {
+        role: "uiConsumer",
+        path: "webview/assets/app-initial~app-main~new-thread-panel-page~appgen-library-page~hotkey-window-thread-page~ho~iufn7mg3-Cdmi2Vi6.js",
+        sha256: "3ff639167f02a2b7cea21fcdf37b6c441f80447ca732fc588675ad9c96692024",
+      },
+      {
+        role: "actionConsumer",
+        path: "webview/assets/review-mode-content-Bb2tYtzP.js",
+        sha256: "6aac3fc4e02f3d096fd8161719205172304437e7594465216040bc9462ce76fd",
+      },
+    ],
+  });
+});
+
+test("manifest allows reviewed roles to share one physical module", async (t) => {
+  const sources = {
+    ...MODULE_SOURCES,
+    serviceTier: SHARED_SERVICE_REQUEST_SOURCE,
+    actionConsumer: SHARED_ACTION_SOURCE,
+  };
+  const fixture = await createFixture(t, {
+    asarSources: sources,
+    workSources: sources,
+    manifestSources: sources,
+  });
+  const manifests = clone(fixture.manifests);
+  const serviceTier = manifests[0].modules.find(
+    (module) => module.role === "serviceTier",
+  );
+  const requestResolver = manifests[0].modules.find(
+    (module) => module.role === "requestResolver",
+  );
+  requestResolver.path = serviceTier.path;
+  requestResolver.sha256 = serviceTier.sha256;
+
+  const result = verifyFixture(fixture, { manifests });
+
   assert.deepEqual(
     result.evidence.map((item) => item.action).sort(),
     ["start-conversation", "start-turn-for-host"],
@@ -295,11 +382,11 @@ test("manifest schema rejects ambiguity and unsafe module declarations", async (
       "manifest_roles_invalid",
     ],
     [
-      "duplicate path",
+      "shared path with conflicting hashes",
       (manifests) => {
         manifests[0].modules[1].path = manifests[0].modules[0].path;
       },
-      "manifest_path_duplicate",
+      "manifest_path_hash_conflict",
     ],
     [
       "absolute path",

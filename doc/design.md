@@ -178,7 +178,7 @@ out/
    - 将函数内 `X.authMethod !== "chatgpt"` 结构替换为 `!1`。
 
 2. 请求 tier 传递
-   - 对已人工复核的上游版本/build，先校验原始 `app.asar` SHA-256，并校验五个关键模块在原始 ASAR、解包工作树和版本清单中的字节哈希完全一致。
+   - 对已人工复核的上游版本/build，先校验原始 `app.asar` SHA-256，并校验五个关键角色对应的一至多个模块在原始 ASAR、解包工作树和版本清单中的字节哈希完全一致。同一物理模块可以承担多个角色，但共享路径必须声明相同 SHA-256。
    - 在哈希校验通过后，使用 AST 验证 Fast=`priority`、Standard=官方默认行为、UI setter、请求 resolver，以及 `start-conversation` 和 `start-turn-for-host` 两条请求链路。
    - 已登记版本/build 如果出现未知 ASAR 哈希、模块哈希或结构变化，必须失败且不得回退到旧扫描逻辑。
    - 未登记的上游版本保留旧的结构化扫描兼容路径；若只能找到 UI gate，找不到请求 payload 构造点或原生 tier 证据，patch 必须失败。
@@ -187,7 +187,7 @@ out/
 验证策略：
 
 - 静态 dry-run 输出两类规则的匹配。
-- 对版本绑定校验输出上游版本/build、原始 ASAR 哈希、五个角色模块的清单/ASAR/工作树哈希，以及两条请求 action 的 AST 证据。
+- 对版本绑定校验输出上游版本/build、原始 ASAR 哈希、五个角色在一个或多个模块中的清单/ASAR/工作树哈希，以及两条请求 action 的 AST 证据。
 - 运行时可观察请求验证使用本地代理或 mock endpoint 捕获请求 payload，分别触发 Fast 和 Standard，确认 tier 不同。
 - 请求验证必须保存两条证据：`fast-request.json` 和 `standard-request.json`，其中 tier 字段分别可解析为 `fast` 或上游 Fast 等价值，以及 `standard` 或上游 Standard 等价值；当前上游 Fast 等价值为 `priority`。
 - 若上游字段从 `service_tier` 改名，patch 必须失败并提示人工复核。
