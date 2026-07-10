@@ -3,6 +3,7 @@ src/
 out/
 .cache/
 .superpowers/
+docs/superpowers/
 *.log
 .DS_Store
 .env
