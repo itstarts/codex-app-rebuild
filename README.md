@@ -1,5 +1,7 @@
 # Codex App Rebuild
 
+English | [简体中文](README.zh-CN.md)
+
 Unofficial macOS arm64 rebuild tooling for a personal `Codex-rebuild.app` release channel.
 
 This repository contains scripts, tests, and documentation for rebuilding a locally downloaded Codex Desktop app with a narrow set of patches:
