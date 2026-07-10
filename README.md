@@ -18,6 +18,18 @@ The repository is intended to store rebuild automation only. It does not vendor 
 
 Release artifacts are generated from upstream software. Review the upstream terms, licenses, and distribution rights before making any release public or sharing artifacts beyond your own permitted use.
 
+## Latest Release
+
+Download the current rebuild from [GitHub Releases](https://github.com/itstarts/codex-app-rebuild/releases/latest). Existing installations check the same latest release through `appcast-darwin-arm64.xml`.
+
+## API Key Model Selection
+
+For API Key connections, the model picker reads the Codex App Server's bundled model catalog. It does not render the third-party provider's `/models` response, so fields such as `display_name` in that response do not control the app UI.
+
+The rebuild keeps bundled GPT-5.6 entries selectable for API Key hosts, including `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`, together with the app's bundled names, descriptions, and reasoning-level metadata. The configured API endpoint must still accept the selected model ID; this client-side catalog patch does not add server-side model support.
+
+See [doc/design.md](doc/design.md) for the patch boundary and data flow.
+
 ## Requirements
 
 - Node.js 24+
