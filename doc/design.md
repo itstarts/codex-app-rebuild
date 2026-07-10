@@ -49,6 +49,7 @@ scripts/
   patch-copyright.js
   patch-fast-mode.js
   patch-plugin-capabilities.js
+  patch-api-key-model-availability.js
   patch-update-channel.js
   build-mac-arm64.js
   generate-appcast.js
@@ -134,6 +135,7 @@ out/
   - `patch-copyright.js`
   - `patch-fast-mode.js`
   - `patch-plugin-capabilities.js`
+  - `patch-api-key-model-availability.js`
   - `patch-update-channel.js`
 - 支持 `--check` dry-run。
 - 每个 patch 输出命中文件、规则名、替换数量。
@@ -214,7 +216,16 @@ out/
 - `bundled_plugin_filter` 只能作用于 descriptor 列表中 plugin id 或 feature key 包含 `browser_use`、`browser_use_external`、`computer_use`、`control`、`js_repl` 的条目。
 - 如果上游 filter callback 无法在 AST 中关联到上述 plugin id 或 feature key，不能使用全局 `()=>!0` 替换，必须失败并提示人工复核。
 
-### 6. 更新通道 patch
+### 6. API Key 模型目录 patch
+
+脚本：`scripts/patch-api-key-model-availability.js`
+
+- 模型选择器继续消费 Codex App Server 的内置 `Model` 目录，不读取第三方 `/models`。
+- `authMethod="apikey"` 与 `amazonBedrock` 一样绕过 ChatGPT `available_models` 白名单，随后按内置 `hidden` 字段筛选。
+- `chatgpt` 等其他认证方式保持原白名单行为。
+- AST 规则必须证明同一 `models.forEach(...)` 回调中的 `gate ? availableModels.has(item.model) : !item.hidden` 控制模型过滤，并将 `gate` 解析到外层顶级初始化条件；成员名必须静态可知且绑定不得被遮蔽，目标缺失或不唯一时失败。
+
+### 7. 更新通道 patch
 
 脚本：`scripts/patch-update-channel.js`
 
@@ -253,7 +264,7 @@ https://github.com/itstarts/codex-app-rebuild/releases/latest/download/appcast-d
 - updater CommonJS 导出/消费链、build-flavor 真实导出或纯求值证明不唯一、不完整时失败。
 - Info.plist 与 ASAR package 更新配置不一致时失败。
 
-### 7. app 身份和打包模块
+### 8. app 身份和打包模块
 
 脚本：`scripts/build-mac-arm64.js`
 
@@ -289,7 +300,7 @@ https://github.com/itstarts/codex-app-rebuild/releases/latest/download/appcast-d
 - 指定环境变量 `CODESIGN_IDENTITY` 时使用该身份签名。
 - 签名后必须运行 `codesign --verify --deep --strict`。
 
-### 8. 版本号策略
+### 9. 版本号策略
 
 构建号变量：`REBUILD_BUILD_NUMBER`
 
@@ -327,7 +338,7 @@ YYYYMMDDHHMMSSNN
 - `...01` 后的 `...02` 必须通过。
 - `...01` 后下一秒的 `...00` 必须通过。
 
-### 9. Appcast 生成模块
+### 10. Appcast 生成模块
 
 脚本：`scripts/generate-appcast.js`
 
@@ -360,7 +371,7 @@ YYYYMMDDHHMMSSNN
 - 生成脚本不得打印 private key。
 - 发布前必须从 private key 推导 public key，并与 `config/sparkle/public-ed-key.txt` 完全一致；不一致时失败。
 
-### 10. 验证模块
+### 11. 验证模块
 
 脚本：`scripts/verify-build.js`
 

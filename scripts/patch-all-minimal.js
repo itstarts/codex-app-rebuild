@@ -7,6 +7,7 @@ const PATCHES = [
   "patch-copyright.js",
   "patch-fast-mode.js",
   "patch-plugin-capabilities.js",
+  "patch-api-key-model-availability.js",
   "patch-update-channel.js",
 ];
 

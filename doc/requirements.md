@@ -80,6 +80,10 @@
      - 最低系统版本字段，如官方 appcast 可获取则沿用官方值
      - `sparkle:hardwareRequirements`，值必须约束为 arm64 可用硬件
 
+7. API Key 模型目录兼容
+   - 第三方 OpenAI 兼容 API 使用 `authMethod="apikey"` 时，模型选择器必须使用内置模型目录中的可见模型，不受 ChatGPT `available_models` 白名单限制。
+   - 模型展示信息必须来自内置目录，不读取或转换第三方 `/models` 响应。
+
 ### 不在当前阶段实现
 
 - Windows 和 Linux 构建
@@ -162,6 +166,13 @@
 - 产物未 notarize 时，文档必须说明首次打开和更新后可能出现 Gatekeeper、Keychain、quarantine 提示。
 - `codesign --verify --deep --strict` 必须通过；Gatekeeper/quarantine 提示只作为运行时限制记录，不作为签名验证失败的替代说明。
 
+### R8. API Key 模型目录兼容
+
+- 第三方 OpenAI 兼容 API 使用 `authMethod="apikey"` 时，模型选择器必须允许内置目录中的可见模型参与选择，不能因 ChatGPT `available_models` 白名单缺失而只显示“自定义”。
+- 模型展示名称、说明和推理档位必须来自内置模型目录；构建脚本不得读取或转换第三方 `/models`，也不得让渲染层接触 API Key。
+- `chatgpt` 等其他认证方式的现有白名单行为不得改变；`amazonBedrock` 的现有例外保持不变。
+- 目标模型归一化结构缺失或命中不唯一时，patch 检查必须失败。
+
 ## 非功能需求
 
 - 最小变更：只引入当前功能需要的 patch。
@@ -183,6 +194,7 @@
 - `plutil` 检查 `CFBundleVersion` 等于本次 `REBUILD_BUILD_NUMBER`，且 `CFBundleShortVersionString` 等于上游 Codex 版本。
 - `strings` 或 ASAR 解包检查可证明 About 文案为 `© OpenAI · itstarts Rebuild`。
 - dry-run 能显示 Fast mode、插件能力和更新 feed patch 的命中摘要。
+- dry-run 必须唯一命中 API Key 模型目录规则；patch 后 `apikey` 不应用 ChatGPT `available_models` 白名单，`chatgpt` 仍应用该白名单。
 - 可观察请求检查能证明 Fast 请求发送 `fast` 或上游 Fast 等价值，Standard 请求发送 `standard` 或上游 Standard 等价值。
 - 静态检查能证明 `shouldIncludeSparkle` 和 `shouldIncludeUpdater` 没有被替换为固定 false。
 - `codesign --verify --deep --strict` 对 ad-hoc 或自签产物返回成功。

@@ -8,6 +8,7 @@ This repository contains scripts, tests, and documentation for rebuilding a loca
 - the Sparkle update feed points to this repository's GitHub Releases
 - the About copyright string is adjusted
 - selected client-side gates for fast mode and bundled capabilities are patched
+- API Key hosts use the bundled model catalog without the ChatGPT `available_models` allowlist, so bundled GPT-5.6 model metadata remains selectable
 
 ## Important Boundaries
 
