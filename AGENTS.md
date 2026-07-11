@@ -34,6 +34,10 @@ Changes in these areas need targeted tests and a clear release-risk note.
 - Run `npm run sync:mac`, `npm run build:mac-arm64`, `npm run appcast`, or `npm run verify` only when the task explicitly needs download/build/sign/release material.
 - Do not push, publish releases, rewrite history, or force update remote refs without explicit user approval in the current task.
 
+## Git Workflow
+
+- After a development branch is merged into `main` or `master`, delete the corresponding local and remote development branches.
+
 ## Release Expectations
 
 - The daily workflow checks for upstream macOS arm64 updates at 07:00 Asia/Shanghai and automatically publishes a signed latest release when a new upstream update is missing from this rebuild channel.
