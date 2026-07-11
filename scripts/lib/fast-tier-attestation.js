@@ -90,6 +90,38 @@ const FAST_TIER_ATTESTATIONS = deepFreeze([
       },
     ],
   },
+  {
+    upstreamVersion: "26.707.41301",
+    upstreamBuild: "5103",
+    appAsarSha256: "2869c4765e5e0c6466e40f739bd0f7fc9e6b659ac10e1e03d391ca3f5e600b56",
+    modules: [
+      {
+        role: "serviceTier",
+        path: "webview/assets/app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~gwqc41kz-Bj9ubaFn.js",
+        sha256: "f2ff3edb1382dcee6e8241fd117b7567c2a851afa19a9d735b446daa983f1a2a",
+      },
+      {
+        role: "requestResolver",
+        path: "webview/assets/app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~gwqc41kz-Bj9ubaFn.js",
+        sha256: "f2ff3edb1382dcee6e8241fd117b7567c2a851afa19a9d735b446daa983f1a2a",
+      },
+      {
+        role: "mainUi",
+        path: "webview/assets/app-initial~app-main~onboarding-page-D4eTO0KG.js",
+        sha256: "4db3de4934ac5af8546e5c1947fdd4a9917a2dc8792b282afc822075f5f8d3bb",
+      },
+      {
+        role: "uiConsumer",
+        path: "webview/assets/app-initial~app-main~page-hSvsQcNf.js",
+        sha256: "e43103ecb869b1ecea9b2bc7124af1fe65c4ba9af440ab0dd13545df0c10bb0a",
+      },
+      {
+        role: "actionConsumer",
+        path: "webview/assets/review-mode-content-SOlP73MN.js",
+        sha256: "82802ddd5fa1cb4bfca5949c3bd9e52be39bb1e2be542e19c69ac5d14b12404a",
+      },
+    ],
+  },
 ]);
 
 class FastTierAttestationError extends Error {
