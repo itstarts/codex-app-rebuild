@@ -61,6 +61,12 @@ const REVIEWED_UPDATER_CALL_CHAINS = Object.freeze([
     buildFlavorHash: "7e6d33aab29002935149edd23a0ce1afa71f4ed829e02b267c16a2265fc90618",
     consumerHash: "2147f521b3d267915faed26418e9ddc9f838f339d733f47d53a196dc7fedfc61",
   }),
+  // Upstream 26.707.61608 (build 5200), final patched ASAR.
+  Object.freeze({
+    definitionHash: "bb7afbfd50c3a5809750a3890a5b9ea5fb6d5acdcd4e7c9110c51d0f125639e3",
+    buildFlavorHash: "59ed239a7e2862572030c2fec8af9d1e456d8213a01d17c57072d89e08513d59",
+    consumerHash: "213a47da33e8d275dae891d5d1e86955e5561a1858111c2f80d28055046f552b",
+  }),
 ]);
 const FUNCTION_NODE_TYPES = new Set([
   "FunctionDeclaration",
