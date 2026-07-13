@@ -271,6 +271,88 @@ test("upstream 26.707.41301 attestation maps five roles across four reviewed mod
   });
 });
 
+test("upstream 26.707.51957 attestation maps five roles across two reviewed modules", () => {
+  const manifest = FAST_TIER_ATTESTATIONS.find(
+    (entry) =>
+      entry.upstreamVersion === "26.707.51957" &&
+      entry.upstreamBuild === "5175",
+  );
+
+  assert.deepEqual(manifest, {
+    upstreamVersion: "26.707.51957",
+    upstreamBuild: "5175",
+    appAsarSha256: "26708d5be316b43786ba00ea8581317426e44ff508e0d5cce40f53181582e027",
+    modules: [
+      {
+        role: "serviceTier",
+        path: "webview/assets/app-initial~app-main~new-thread-panel-page~appgen-library-page~hotkey-window-thread-page~ho~iufn7mg3-k1satKyX.js",
+        sha256: "4bd5e9614579174f1d612786cc693a3f1babd3dd1884d8949c6fea59091e19ac",
+      },
+      {
+        role: "requestResolver",
+        path: "webview/assets/app-initial~app-main~new-thread-panel-page~appgen-library-page~hotkey-window-thread-page~ho~iufn7mg3-k1satKyX.js",
+        sha256: "4bd5e9614579174f1d612786cc693a3f1babd3dd1884d8949c6fea59091e19ac",
+      },
+      {
+        role: "mainUi",
+        path: "webview/assets/app-initial~app-main~new-thread-panel-page~appgen-library-page~hotkey-window-thread-page~ho~iufn7mg3-k1satKyX.js",
+        sha256: "4bd5e9614579174f1d612786cc693a3f1babd3dd1884d8949c6fea59091e19ac",
+      },
+      {
+        role: "uiConsumer",
+        path: "webview/assets/app-initial~app-main~new-thread-panel-page~appgen-library-page~hotkey-window-thread-page~ho~iufn7mg3-k1satKyX.js",
+        sha256: "4bd5e9614579174f1d612786cc693a3f1babd3dd1884d8949c6fea59091e19ac",
+      },
+      {
+        role: "actionConsumer",
+        path: "webview/assets/review-mode-content-JCUBsbK-.js",
+        sha256: "05ad476bb111ed2bf756c37c7cd6b80bd1fb3a0ba7bbf696bd42ed3880f859ee",
+      },
+    ],
+  });
+});
+
+test("upstream 26.707.61608 attestation maps five roles across five reviewed modules", () => {
+  const manifest = FAST_TIER_ATTESTATIONS.find(
+    (entry) =>
+      entry.upstreamVersion === "26.707.61608" &&
+      entry.upstreamBuild === "5200",
+  );
+
+  assert.deepEqual(manifest, {
+    upstreamVersion: "26.707.61608",
+    upstreamBuild: "5200",
+    appAsarSha256: "7cd7f277d4d4b6221eb2121fd36d2238c28f203875c62f8abd36f3f12898cb86",
+    modules: [
+      {
+        role: "serviceTier",
+        path: "webview/assets/app-initial~app-main~new-thread-panel-page~onboarding-page~login-route~appgen-library-page~~gpgl9un5-_t04Xpau.js",
+        sha256: "62998a86c70f2879d9cd419c8b2abbf26d4ac85fcbad2126e117a276ec92c461",
+      },
+      {
+        role: "requestResolver",
+        path: "webview/assets/app-initial~app-main~pull-request-code-review~onboarding-page~hotkey-window-thread-page~cha~b76hmflu-CeoeefuW.js",
+        sha256: "99cd5e77cf850a987675959edf32e51ff3f52d34c45ce27db4609f8a56153c58",
+      },
+      {
+        role: "mainUi",
+        path: "webview/assets/app-initial~app-main~onboarding-page-D9sPBwim.js",
+        sha256: "f1675e206f5877557a693318aac1d790fcb030d18cfd7e11d1ddfeec0d060ed1",
+      },
+      {
+        role: "uiConsumer",
+        path: "webview/assets/app-initial~app-main~page-CMpPiY3-.js",
+        sha256: "cc4219c3c737a4296454dee70e188223f6a12d958649a2316672c59d14cd757a",
+      },
+      {
+        role: "actionConsumer",
+        path: "webview/assets/review-mode-content-h8P7xLlA.js",
+        sha256: "23f78042ce285b70760b90d111e081f164a88cad8f98da6cacf333fea6204a1d",
+      },
+    ],
+  });
+});
+
 test("manifest allows reviewed roles to share one physical module", async (t) => {
   const sources = {
     ...MODULE_SOURCES,
