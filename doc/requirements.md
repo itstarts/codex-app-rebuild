@@ -123,6 +123,8 @@
 - UI 当前选择为 Fast 时，请求层必须发送 `service_tier` 或上游当前等价字段为 `fast`，或保持上游 Fast 等价值；当前上游 Fast 等价值为 `priority`。
 - UI 当前选择为 Standard 时，请求层必须发送 `service_tier` 或上游当前等价字段为 `standard`，或保持官方 Standard 等价行为。
 - 对已登记的上游版本/build，必须用原始 ASAR 哈希、五个关键角色对应的一至多个模块逐文件哈希和 AST 结构证据证明官方原生 tier 链路；同一模块承担多个角色时必须声明相同哈希。任一证据变化时必须失败，且不得降级到旧扫描逻辑。
+- 对未登记的新上游，允许按稳定语义标记自动发现五个角色；必须找到唯一完整 AST 映射，并证明被选模块在原始 ASAR 与解包工作树中的字节一致。raw hash、bundle 文件名或无关代码变化不得单独要求人工登记。
+- 自动发现缺失或歧义时允许回退到已有请求结构扫描；自动发现和旧扫描均无法证明请求 tier 行为时必须失败。
 - 版本绑定校验通过时不得修改请求 tier 构造代码；请求文本 patch 命中数必须为零。
 - 如果上游字段名变化，patch 必须失败并提示人工复核。
 - 验证必须包含一次可观察请求检查：通过本地 mock API、代理日志或等价请求捕获机制分别证明 Fast 和 Standard 两种选择产生不同的请求 tier。
@@ -155,7 +157,8 @@
 - 用户点击更新按钮后，允许系统弹出权限确认或密码输入。
 - 更新成功后，新 app 仍必须保持同一 bundle id、app 名、feed URL、Sparkle public key、`CFBundleVersion` 递增策略。
 - 静态验证必须证明 `shouldIncludeSparkle` 和 `shouldIncludeUpdater` 没有被 patch 成固定 false。
-- updater definition、build-flavor 和主进程 consumer 必须共同匹配已人工复核的源文件 SHA-256 组合；任一模块、CommonJS loader 或 `process.env` 使用方式变化时必须失败并重新评审。
+- updater definition、build-flavor 和主进程 consumer 的 SHA-256 组合作为审计信息，不作为新上游的单独硬门禁。
+- 未知 hash 必须继续满足唯一 CommonJS 导出/双调用链、可信 loader 与 `process.env`、生产/darwin 运行参数、绑定不可变性、受保护 prototype 不被污染，以及两个 predicate 静态求值严格为 true；任一语义证据变化时必须失败。
 
 ### R7. 签名和安全边界
 

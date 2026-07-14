@@ -12,6 +12,7 @@ const {
 } = require("./patch-util");
 const {
   verifyFastTierAttestation,
+  verifyFastTierIntegrity,
 } = require("./lib/fast-tier-attestation");
 
 const FAST_TIER_KEYS = new Set(["service_tier", "serviceTier", "tier"]);
@@ -2325,7 +2326,7 @@ function logFastTierAttestation(attestation) {
     return;
   }
   console.log(
-    `[fast-attestation] upstream=${attestation.manifest.upstreamVersion}/${attestation.manifest.upstreamBuild} appAsarSha256=${attestation.actualAsarSha256}`,
+    `[fast-attestation] provenance=${attestation.provenance ?? "reviewed-hash"} upstream=${attestation.manifest.upstreamVersion}/${attestation.manifest.upstreamBuild} appAsarSha256=${attestation.actualAsarSha256}`,
   );
   for (const [role, record] of attestation.roles) {
     console.log(
@@ -2351,7 +2352,8 @@ function runFastModePatch({
   if (manifests !== undefined) {
     attestationOptions.manifests = manifests;
   }
-  const attestation = verifyFastTierAttestation(attestationOptions);
+  attestationOptions.candidateFiles = assetBundles;
+  const attestation = verifyFastTierIntegrity(attestationOptions);
   logFastTierAttestation(attestation);
 
   const gateTotal = patchFiles(
@@ -2399,5 +2401,6 @@ module.exports = {
   collectFastRequestEvidence,
   runFastModePatch,
   verifyFastTierAttestation,
+  verifyFastTierIntegrity,
   run,
 };

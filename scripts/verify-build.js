@@ -41,7 +41,7 @@ const REQUIRED_UPDATER_BUILD_FLAVORS = Object.freeze([
   "PublicBeta",
   "Prod",
 ]);
-// Reviewed updater definition, flavor, and final patched consumer chains.
+// Reviewed updater definition, flavor, and final patched consumer audit fingerprints.
 const REVIEWED_UPDATER_CALL_CHAINS = Object.freeze([
   // Upstream 26.707.30751 (build 5018), final patched ASAR.
   Object.freeze({
@@ -66,12 +66,6 @@ const REVIEWED_UPDATER_CALL_CHAINS = Object.freeze([
     definitionHash: "bb7afbfd50c3a5809750a3890a5b9ea5fb6d5acdcd4e7c9110c51d0f125639e3",
     buildFlavorHash: "59ed239a7e2862572030c2fec8af9d1e456d8213a01d17c57072d89e08513d59",
     consumerHash: "213a47da33e8d275dae891d5d1e86955e5561a1858111c2f80d28055046f552b",
-  }),
-  // Upstream 26.707.71524 (build 5263), final patched ASAR.
-  Object.freeze({
-    definitionHash: "7af97450ed4b3accc73cfb1bcc87fb666b9f8033d4ee68dc562648c54ee2cedd",
-    buildFlavorHash: "5c436ced43c0b649de367fe9b60dd8a2ef6897551dfe2eb3c4012ba9a14e6df8",
-    consumerHash: "23b6541ecda71e19473b28b7afb1794d936d5428b791634ad4d9727f111c40d1",
   }),
 ]);
 const FUNCTION_NODE_TYPES = new Set([
@@ -1106,7 +1100,7 @@ function validateRequiredBuildFlavorModule(jsSources, candidate, state) {
       .map((record) => exactGetterFunction(record.descriptor)),
   );
   validateBuildFlavorNamespace(ast, containerName, moduleSource.name, namespaceGetters);
-  return moduleSource;
+  return { ...moduleSource, ast };
 }
 
 function directRelativeRequire(init) {
@@ -1738,6 +1732,55 @@ function assertProcessEnvReferences(ast, label) {
   }
 }
 
+function protectedPrototypeMutation(node) {
+  let current = unwrapChain(node);
+  const members = [];
+  while (current?.type === "MemberExpression") {
+    members.unshift(staticMemberName(current));
+    current = unwrapChain(current.object);
+  }
+  return (
+    current?.type === "Identifier" &&
+    current.name === "Array" &&
+    members[0] === "prototype" &&
+    (members.length === 1 || members[1] === "includes")
+  );
+}
+
+function assertNoPrototypeMutations(ast, label) {
+  let violation = null;
+  walkAstWithAncestors(ast, (node, ancestors) => {
+    if (violation) return;
+    let target = null;
+    if (node.type === "AssignmentExpression" || node.type === "UpdateExpression") {
+      target = node.type === "AssignmentExpression" ? node.left : node.argument;
+    } else if (node.type === "UnaryExpression" && node.operator === "delete") {
+      target = node.argument;
+    }
+    if (protectedPrototypeMutation(target)) {
+      violation = node.type;
+      return;
+    }
+    if (node.type !== "CallExpression") return;
+    const callee = unwrapChain(node.callee);
+    if (callee?.type !== "MemberExpression") return;
+    const object = unwrapChain(callee.object);
+    const method = staticMemberName(callee);
+    if (
+      method === "setPrototypeOf" &&
+      object?.type === "Identifier" &&
+      (object.name === "Object" || object.name === "Reflect") &&
+      !bindingShadowedByAncestors(ancestors, object.name) &&
+      protectedPrototypeMutation(node.arguments[0])
+    ) {
+      violation = `${object.name}.${method}`;
+    }
+  });
+  if (violation) {
+    throw new Error(`${label} contains prototype mutation: ${violation}`);
+  }
+}
+
 function analyzeConsumerAlias(ast, localName, exportKey) {
   const calls = new Set();
   let mutated = false;
@@ -1843,6 +1886,145 @@ function analyzeConsumerAlias(ast, localName, exportKey) {
   return { calls, mutated };
 }
 
+function literalString(node) {
+  const target = unwrapChain(node);
+  if (target?.type === "Literal" && typeof target.value === "string") {
+    return target.value;
+  }
+  if (target?.type === "TemplateLiteral" && target.expressions.length === 0) {
+    return target.quasis[0]?.value?.cooked ?? null;
+  }
+  return null;
+}
+
+function nearestAncestorFunction(ancestors) {
+  return [...ancestors].reverse().find((node) => isFunctionNode(node)) ?? null;
+}
+
+function staticallyExcludedByAncestors(node, ancestors) {
+  let child = node;
+  for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+    const ancestor = ancestors[index];
+    if (ancestor.type === "IfStatement" && ancestor.test.type === "Literal") {
+      if (ancestor.test.value === false && child === ancestor.consequent) return true;
+      if (ancestor.test.value === true && child === ancestor.alternate) return true;
+    }
+    if (ancestor.type === "ConditionalExpression" && ancestor.test.type === "Literal") {
+      if (ancestor.test.value === false && child === ancestor.consequent) return true;
+      if (ancestor.test.value === true && child === ancestor.alternate) return true;
+    }
+    child = ancestor;
+  }
+  return false;
+}
+
+function exactProcessMember(node, memberName, ancestors) {
+  const target = unwrapChain(node);
+  return (
+    target?.type === "MemberExpression" &&
+    !target.computed &&
+    unwrapChain(target.object)?.type === "Identifier" &&
+    unwrapChain(target.object).name === "process" &&
+    staticMemberName(target) === memberName &&
+    !bindingShadowedByAncestors(ancestors, "process")
+  );
+}
+
+function functionBindsBuildFlavor(functionNode, localName, before) {
+  if (!functionNode) return false;
+  let matches = 0;
+  let mutated = false;
+  walkAstWithAncestors(functionNode.body, (node, ancestors) => {
+    if (ancestors.some((ancestor) => isFunctionNode(ancestor))) return;
+    const nestedAncestors = ancestors.filter((ancestor) => ancestor !== functionNode.body);
+    if (bindingShadowedByAncestors(nestedAncestors, localName)) return;
+    let target = null;
+    if (node.type === "AssignmentExpression" || node.type === "UpdateExpression") {
+      target = node.type === "AssignmentExpression" ? node.left : node.argument;
+    } else if (node.type === "UnaryExpression" && node.operator === "delete") {
+      target = node.argument;
+    } else if (
+      (node.type === "ForInStatement" || node.type === "ForOfStatement") &&
+      node.left.type !== "VariableDeclaration"
+    ) {
+      target = node.left;
+    }
+    if (target && assignmentTargetMutatesBinding(target, localName)) {
+      mutated = true;
+    }
+    if (node.start >= before) return;
+    if (node.type !== "VariableDeclarator" || node.id.type !== "ObjectPattern") return;
+    if (node.id.properties.some(
+      (property) =>
+        property.type === "Property" &&
+        propertyName(property.key) === "buildFlavor" &&
+        patternBindsName(property.value, localName),
+    )) {
+      matches += 1;
+    }
+  });
+  return matches === 1 && !mutated;
+}
+
+function collectUpdaterConsumerCalls(ast, localName, exportKey) {
+  const calls = [];
+  walkAstWithAncestors(ast, (node, ancestors) => {
+    if (node.type !== "CallExpression" || bindingShadowedByAncestors(ancestors, localName)) {
+      return;
+    }
+    const callee = unwrapChain(node.callee);
+    const namespace = callee?.type === "MemberExpression" ? unwrapChain(callee.object) : null;
+    const root = namespace?.type === "MemberExpression" ? unwrapChain(namespace.object) : null;
+    const method = callee?.type === "MemberExpression" ? staticMemberName(callee) : null;
+    if (
+      root?.type === "Identifier" &&
+      root.name === localName &&
+      staticMemberName(namespace) === exportKey &&
+      (method === "shouldIncludeSparkle" || method === "shouldIncludeUpdater")
+    ) {
+      calls.push({ node, ancestors, method });
+    }
+  });
+  return calls;
+}
+
+function assertUpdaterConsumerRuntimeCalls(ast, localName, exportKey, file) {
+  const calls = collectUpdaterConsumerCalls(ast, localName, exportKey);
+  for (const method of ["shouldIncludeSparkle", "shouldIncludeUpdater"]) {
+    if (calls.filter((call) => call.method === method).length !== 1) {
+      throw new Error(`updater consumer ${file} must call ${method} exactly once`);
+    }
+  }
+  const scopes = new Set();
+  for (const call of calls) {
+    if (staticallyExcludedByAncestors(call.node, call.ancestors)) {
+      throw new Error(`updater consumer ${file} contains a statically unreachable ${call.method} call`);
+    }
+    const [buildFlavor, platform, environment] = call.node.arguments;
+    const functionNode = nearestAncestorFunction(call.ancestors);
+    const productionFlavor =
+      literalString(buildFlavor) === BUILD_FLAVORS.Prod ||
+      (buildFlavor?.type === "Identifier" &&
+        functionBindsBuildFlavor(functionNode, buildFlavor.name, call.node.start));
+    const darwinPlatform =
+      literalString(platform) === "darwin" ||
+      exactProcessMember(platform, "platform", call.ancestors);
+    if (
+      !productionFlavor ||
+      !darwinPlatform ||
+      !exactProcessMember(environment, "env", call.ancestors)
+    ) {
+      throw new Error(
+        `updater consumer ${file} must pass production build flavor, darwin platform, and process.env`,
+      );
+    }
+    scopes.add(functionNode);
+  }
+  if (scopes.size !== 1) {
+    throw new Error(`updater consumer ${file} calls updater predicates from different scopes`);
+  }
+}
+
 function findDualCallConsumer(jsSources, candidateFile, exportKey, parseRecord) {
   let mutationError = null;
   for (const file of jsSources) {
@@ -1894,6 +2076,7 @@ function findDualCallConsumer(jsSources, candidateFile, exportKey, parseRecord) 
             file: file.name,
             localName: declarator.id.name,
             sourceHash: sha256Text(file.source),
+            ast,
           };
         }
       }
@@ -1972,7 +2155,7 @@ function findMainUpdaterCandidate(jsSources) {
   return matches[0];
 }
 
-function assertReviewedUpdaterCallChain(candidate, buildFlavorSource, reviewedCallChains) {
+function reviewUpdaterCallChain(candidate, buildFlavorSource, reviewedCallChains) {
   const actual = {
     definitionHash: candidate.sourceHash,
     buildFlavorHash: sha256Text(buildFlavorSource.source),
@@ -1984,13 +2167,7 @@ function assertReviewedUpdaterCallChain(candidate, buildFlavorSource, reviewedCa
       entry?.buildFlavorHash === actual.buildFlavorHash &&
       entry?.consumerHash === actual.consumerHash,
   );
-  if (!reviewed) {
-    throw new Error(
-      "updater call-chain source hashes are not reviewed: " +
-        `definition=${actual.definitionHash} buildFlavor=${actual.buildFlavorHash} ` +
-        `consumer=${actual.consumerHash}`,
-    );
-  }
+  return { reviewed, hashes: actual };
 }
 
 function staticCheckUpdaterCandidate(candidate, jsSources, reviewedCallChains) {
@@ -2007,6 +2184,7 @@ function staticCheckUpdaterCandidate(candidate, jsSources, reviewedCallChains) {
   );
   assertNoCommonJsLoaderAccess(candidate.ast, `updater module ${candidate.file}`);
   assertProcessEnvReferences(candidate.ast, `updater module ${candidate.file}`);
+  assertNoPrototypeMutations(candidate.ast, `updater module ${candidate.file}`);
   const state = collectStaticScope(candidate.ast);
   assertUpdaterBuildFlavorBindingReferences(
     candidate.ast,
@@ -2030,7 +2208,16 @@ function staticCheckUpdaterCandidate(candidate, jsSources, reviewedCallChains) {
     "updater container",
   );
   const buildFlavorSource = validateRequiredBuildFlavorModule(jsSources, candidate, state);
-  assertReviewedUpdaterCallChain(candidate, buildFlavorSource, reviewedCallChains);
+  assertNoPrototypeMutations(
+    buildFlavorSource.ast,
+    `build flavor module ${buildFlavorSource.name}`,
+  );
+  assertUpdaterConsumerRuntimeCalls(
+    candidate.consumer.ast,
+    candidate.consumer.localName,
+    candidate.exportKey,
+    candidate.consumer.file,
+  );
   const context = createBaseContext(state);
   for (const predicateName of ["shouldIncludeSparkle", "shouldIncludeUpdater"]) {
     const result = evalFunction(
@@ -2063,6 +2250,7 @@ function staticCheckUpdaterCandidate(candidate, jsSources, reviewedCallChains) {
       assertStaticDataBindingReferences(candidate.ast, name, bindings[0].node);
     }
   }
+  return reviewUpdaterCallChain(candidate, buildFlavorSource, reviewedCallChains);
 }
 
 function verifyUpdaterNotDisabledWithReviewedCallChains(app, asarPath, reviewedCallChains) {
@@ -2072,11 +2260,19 @@ function verifyUpdaterNotDisabledWithReviewedCallChains(app, asarPath, reviewedC
   }
 
   const jsSources = extractAsarJavaScriptSources(asarPath);
-  staticCheckUpdaterCandidate(
+  const review = staticCheckUpdaterCandidate(
     findMainUpdaterCandidate(jsSources),
     jsSources,
     reviewedCallChains,
   );
+  if (!review.reviewed) {
+    console.log(
+      "[verify-updater] structurally verified unreviewed source hashes: " +
+        `definition=${review.hashes.definitionHash} ` +
+        `buildFlavor=${review.hashes.buildFlavorHash} consumer=${review.hashes.consumerHash}`,
+    );
+  }
+  return review;
 }
 
 function verifyUpdaterNotDisabled(app, asarPath) {

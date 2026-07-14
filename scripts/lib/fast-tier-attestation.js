@@ -12,6 +12,30 @@ const REQUIRED_ROLES = [
   "uiConsumer",
   "actionConsumer",
 ];
+const ROLE_MARKERS = Object.freeze({
+  serviceTier: Object.freeze(["priority", "default", "serviceTiers", "value:null", "iconKind"]),
+  requestResolver: Object.freeze([
+    "chatgpt",
+    "fast_mode",
+    "service_tier",
+    "read-config-for-host",
+    "list-models-for-host",
+  ]),
+  mainUi: Object.freeze([
+    "serviceTierForRequest",
+    "availableOptions",
+    "setServiceTier",
+    "batch-write-config-value",
+    "service_tier",
+  ]),
+  uiConsumer: Object.freeze(["iconKind", "fast", "onSelectServiceTier", "setServiceTier"]),
+  actionConsumer: Object.freeze(["start-conversation", "start-turn-for-host"]),
+});
+const STRUCTURAL_DISCOVERY_MISS_CODES = new Set([
+  "structure_role_missing",
+  "structure_mapping_missing",
+  "structure_mapping_ambiguous",
+]);
 const HASH_PATTERN = /^[0-9a-f]{64}$/;
 const BUILD_PATTERN = /^(?:0|[1-9]\d*)$/;
 
@@ -183,38 +207,6 @@ const FAST_TIER_ATTESTATIONS = deepFreeze([
         role: "actionConsumer",
         path: "webview/assets/review-mode-content-h8P7xLlA.js",
         sha256: "23f78042ce285b70760b90d111e081f164a88cad8f98da6cacf333fea6204a1d",
-      },
-    ],
-  },
-  {
-    upstreamVersion: "26.707.71524",
-    upstreamBuild: "5263",
-    appAsarSha256: "d28f31b4bbb04c519be65c2af8277d8c5faf77b4239ee89b928f0a7423dacd84",
-    modules: [
-      {
-        role: "serviceTier",
-        path: "webview/assets/app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~gwqc41kz-CnQKtQ6U.js",
-        sha256: "beed8b3ca3f499be57fe3603e326b05eab99d29c3d69476456374f8bc2f4b6df",
-      },
-      {
-        role: "requestResolver",
-        path: "webview/assets/app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~gwqc41kz-CnQKtQ6U.js",
-        sha256: "beed8b3ca3f499be57fe3603e326b05eab99d29c3d69476456374f8bc2f4b6df",
-      },
-      {
-        role: "mainUi",
-        path: "webview/assets/app-initial~app-main~onboarding-page-qmFVRsFx.js",
-        sha256: "99169976a3a20b02980beae3eef89ad3a6d31729a4df4b8a9df2c9d596f69653",
-      },
-      {
-        role: "uiConsumer",
-        path: "webview/assets/app-initial~app-main~new-thread-panel-page~appgen-library-page~hotkey-window-thread-page~ho~iufn7mg3-BWgIh_w6.js",
-        sha256: "b6c759715525213966578c049e0ee90391a021afcb2c23f835e72ada8fd27ad3",
-      },
-      {
-        role: "actionConsumer",
-        path: "webview/assets/review-mode-content-BoINBFNt.js",
-        sha256: "fc1d1c4482ca6ca065f0dfed197948bb02dce0a01317c27ef6e337e49a15d349",
       },
     ],
   },
@@ -762,22 +754,10 @@ function verifyStructure(roleRecords) {
   const ui = roleRecords.get("uiConsumer");
   const action = roleRecords.get("actionConsumer");
 
-  requireMarkers(service.source, "serviceTier", ["priority", "default", "serviceTiers", "value:null", "iconKind"]);
-  requireMarkers(request.source, "requestResolver", [
-    "chatgpt",
-    "fast_mode",
-    "service_tier",
-    "read-config-for-host",
-    "list-models-for-host",
-  ]);
-  requireMarkers(mainUi.source, "mainUi", [
-    "serviceTierForRequest",
-    "availableOptions",
-    "setServiceTier",
-    "batch-write-config-value",
-    "service_tier",
-  ]);
-  requireMarkers(ui.source, "uiConsumer", ["iconKind", "fast", "onSelectServiceTier", "setServiceTier"]);
+  requireMarkers(service.source, "serviceTier", ROLE_MARKERS.serviceTier);
+  requireMarkers(request.source, "requestResolver", ROLE_MARKERS.requestResolver);
+  requireMarkers(mainUi.source, "mainUi", ROLE_MARKERS.mainUi);
+  requireMarkers(ui.source, "uiConsumer", ROLE_MARKERS.uiConsumer);
 
   const serviceAst = parseModule(service.source, "serviceTier");
   const requestAst = parseModule(request.source, "requestResolver");
@@ -889,8 +869,137 @@ function verifyFastTierAttestation({
   };
 }
 
+function readStructuralCandidates(candidateFiles, projectRoot) {
+  if (!Array.isArray(candidateFiles)) {
+    fail("structure_candidates_invalid", "Fast tier candidate files must be an array", "structure");
+  }
+  const extractedRoot = path.join(path.resolve(projectRoot), "src", PLATFORM, "_asar");
+  const records = new Map();
+  for (const candidateFile of candidateFiles) {
+    const workPath = assertRegularFilePath(
+      projectRoot,
+      candidateFile,
+      "structure_candidate_path_invalid",
+      "Fast tier structural candidate",
+    );
+    const relative = path.relative(extractedRoot, workPath);
+    if (
+      relative === "" ||
+      relative === ".." ||
+      relative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relative)
+    ) {
+      fail(
+        "structure_candidate_path_invalid",
+        `Fast tier structural candidate is outside the extracted ASAR: ${workPath}`,
+        "structure",
+      );
+    }
+    const internalPath = relative.split(path.sep).join("/");
+    if (!internalPath.startsWith("webview/assets/") || !internalPath.endsWith(".js")) {
+      continue;
+    }
+    records.set(internalPath, {
+      path: internalPath,
+      source: fs.readFileSync(workPath, "utf8"),
+    });
+  }
+  return [...records.values()].sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function findStructuralRoleMapping(records) {
+  const candidatesByRole = new Map();
+  for (const role of REQUIRED_ROLES) {
+    const markers = ROLE_MARKERS[role];
+    const candidates = records.filter((record) =>
+      markers.every((marker) => record.source.includes(marker)),
+    );
+    if (candidates.length === 0) {
+      fail("structure_role_missing", `no structural candidate found for ${role}`, "structure");
+    }
+    candidatesByRole.set(role, candidates);
+  }
+
+  const matches = [];
+  function visit(index, roleRecords) {
+    if (matches.length > 1) return;
+    if (index === REQUIRED_ROLES.length) {
+      try {
+        const evidence = verifyStructure(roleRecords);
+        matches.push({ roleRecords: new Map(roleRecords), evidence });
+      } catch (error) {
+        if (error instanceof FastTierAttestationError && error.phase === "structure") return;
+        throw error;
+      }
+      return;
+    }
+    const role = REQUIRED_ROLES[index];
+    for (const candidate of candidatesByRole.get(role)) {
+      roleRecords.set(role, {
+        module: { role, path: candidate.path },
+        source: candidate.source,
+      });
+      visit(index + 1, roleRecords);
+      roleRecords.delete(role);
+    }
+  }
+  visit(0, new Map());
+
+  if (matches.length === 0) {
+    fail("structure_mapping_missing", "no complete Fast tier structural mapping found", "structure");
+  }
+  if (matches.length !== 1) {
+    fail("structure_mapping_ambiguous", "Fast tier structural mapping is ambiguous", "structure");
+  }
+  return matches[0];
+}
+
+function discoverFastTierAttestation({ metadata, candidateFiles, projectRoot = PROJECT_ROOT }) {
+  const records = readStructuralCandidates(candidateFiles, projectRoot);
+  const mapping = findStructuralRoleMapping(records);
+  const manifest = {
+    upstreamVersion: metadata.upstreamVersion,
+    upstreamBuild: metadata.upstreamBuild,
+    appAsarSha256: metadata.appAsarSha256,
+    modules: REQUIRED_ROLES.map((role) => {
+      const record = mapping.roleRecords.get(role);
+      return {
+        role,
+        path: record.module.path,
+        sha256: sha256(Buffer.from(record.source)),
+      };
+    }),
+  };
+  return verifyFastTierAttestation({ metadata, manifests: [manifest], projectRoot });
+}
+
+function verifyFastTierIntegrity({
+  metadata,
+  manifests = FAST_TIER_ATTESTATIONS,
+  candidateFiles = [],
+  projectRoot = PROJECT_ROOT,
+} = {}) {
+  const reviewed = verifyFastTierAttestation({ metadata, manifests, projectRoot });
+  if (reviewed.required) {
+    return { ...reviewed, provenance: "reviewed-hash" };
+  }
+  try {
+    const discovered = discoverFastTierAttestation({ metadata, candidateFiles, projectRoot });
+    return { ...discovered, provenance: "structural" };
+  } catch (error) {
+    if (
+      error instanceof FastTierAttestationError &&
+      STRUCTURAL_DISCOVERY_MISS_CODES.has(error.code)
+    ) {
+      return { ...reviewed, provenance: "legacy" };
+    }
+    throw error;
+  }
+}
+
 module.exports = {
   FAST_TIER_ATTESTATIONS,
   FastTierAttestationError,
   verifyFastTierAttestation,
+  verifyFastTierIntegrity,
 };
