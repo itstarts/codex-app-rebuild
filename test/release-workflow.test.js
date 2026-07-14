@@ -37,7 +37,7 @@ test("release workflow automatically publishes signed macOS arm64 Sparkle update
 
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /^\s+schedule:/m);
-  assert.match(workflow, /cron: "0 23 \* \* \*"/);
+  assert.match(workflow, /cron: "0 5,11,17,23 \* \* \*"/);
   assert.doesNotMatch(workflow, /^\s+push:/m);
   assert.match(workflow, /release_mode:[\s\S]*default: latest-release/);
   assert.match(workflow, /- latest-release/);
@@ -74,6 +74,12 @@ test("release workflow automatically publishes signed macOS arm64 Sparkle update
   assert.match(workflow, /actions\/setup-node@v6/);
   assert.match(workflow, /actions\/upload-artifact@v7/);
   assert.match(workflow, /actions\/download-artifact@v8/);
+  assert.match(workflow, /node scripts\/prune-github-releases\.js/);
+  assert.match(workflow, /RELEASE_RETENTION_COUNT: "2"/);
+  assert.match(
+    workflow,
+    /if: \$\{\{ github\.event_name == 'schedule' \|\| github\.event\.inputs\.release_mode == 'latest-release' \}\}/,
+  );
   assert.match(workflow, /SPARKLE_VERSION: "2\.9\.4"/);
   assert.match(workflow, /ce89daf967db1e1893ed3ebd67575ed82d3902563e3191ca92aaec9164fbdef9/);
   assert.match(workflow, /\$\{\{\s*secrets\.SPARKLE_PRIVATE_KEY\s*\}\}/);
@@ -97,6 +103,12 @@ test("release workflow automatically publishes signed macOS arm64 Sparkle update
   const publishJob = extractYamlBlock(workflow, "publish-release", 2);
   assert.match(publishJob, /needs: build/);
   assert.match(publishJob, /needs\.build\.result == 'success'/);
+  assert.match(publishJob, /- name: Checkout\s+uses: actions\/checkout@v6/);
+  assert.equal(
+    publishJob.indexOf("- name: Prune old published releases") >
+      publishJob.indexOf("- name: Create or update release"),
+    true,
+  );
   assert.match(workflow, /RELEASE_MODE: \$\{\{ github\.event_name == 'schedule' && 'latest-release' \|\| github\.event\.inputs\.release_mode \}\}/);
   assert.doesNotMatch(workflow, /\bgh release\b/);
   assert.doesNotMatch(workflow, /gh release create/);
@@ -139,7 +151,9 @@ test("release runbook documents GitHub Actions automatic update boundaries", () 
   assert.match(runbook, /release-candidate\.yml/);
   assert.match(runbook, /latest-release/);
   assert.match(runbook, /官方 appcast/);
-  assert.match(runbook, /北京时间每天 7:00/);
+  assert.match(runbook, /北京时间每天 01:00、07:00、13:00、19:00/);
+  assert.match(runbook, /只保留最近 2 个已发布、非 draft Release/);
+  assert.match(runbook, /保留对应 Git tag/);
   assert.match(runbook, /自动发布 latest/);
   assert.match(runbook, /本地旧版 app/);
   assert.match(runbook, /检测到更新/);

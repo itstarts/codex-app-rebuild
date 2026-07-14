@@ -17,7 +17,9 @@
 
 ## GitHub Actions 自动发布
 
-`.github/workflows/release-candidate.yml` 提供基于官方 appcast 的自动发布。workflow 在北京时间每天 7:00 读取 OpenAI 官方 macOS arm64 appcast，并同时读取本项目 latest feed 与 GitHub Releases 中已发布的 appcast。只有 latest feed 已包含相同的官方 `shortVersionString + sparkle:version` 时才跳过构建；draft 或非 latest release 不会被直接提升为 latest。只要 latest feed 缺少该官方更新，workflow 就使用 GitHub-hosted macOS arm64 runner 重新下载上游、校验 Sparkle `2.9.4` 官方归档，并运行 `npm ci`、`npm test`、`npm run sync:mac`、`npm run patch:check`、`npm run patch`、`npm run build:mac-arm64`、`npm run appcast` 和 `npm run verify:static`。只有当前 workflow 生成的候选通过静态发布门禁后，才上传 zip、`appcast-darwin-arm64.xml` 和 `release-metadata.env` 作为 workflow artifact，并创建或更新同 tag 的 latest release。生成的 appcast 会记录 `codexRebuild:upstreamBuild`，用于区分相同 short version 下的官方 build 变化。
+`.github/workflows/release-candidate.yml` 提供基于官方 appcast 的自动发布。workflow 每 6 小时运行一次，在北京时间每天 01:00、07:00、13:00、19:00 读取 OpenAI 官方 macOS arm64 appcast，并同时读取本项目 latest feed 与 GitHub Releases 中已发布的 appcast。只有 latest feed 已包含相同的官方 `shortVersionString + sparkle:version` 时才跳过构建并保持现有 Release 不变；draft 或非 latest release 不会被直接提升为 latest。只要 latest feed 缺少该官方更新，workflow 就使用 GitHub-hosted macOS arm64 runner 重新下载上游、校验 Sparkle `2.9.4` 官方归档，并运行 `npm ci`、`npm test`、`npm run sync:mac`、`npm run patch:check`、`npm run patch`、`npm run build:mac-arm64`、`npm run appcast` 和 `npm run verify:static`。只有当前 workflow 生成的候选通过静态发布门禁后，才上传 zip、`appcast-darwin-arm64.xml` 和 `release-metadata.env` 作为 workflow artifact，并创建或更新同 tag 的 latest release。生成的 appcast 会记录 `codexRebuild:upstreamBuild`，用于区分相同 short version 下的官方 build 变化。
+
+每次成功发布 latest 后，workflow 只保留最近 2 个已发布、非 draft Release，删除更旧的 Release 对象；清理过程保留对应 Git tag，也不处理 draft。`draft-release` 和 `artifact-only` 模式不会触发 Release 清理。
 
 GitHub `schedule` 事件只在默认分支的最新提交上运行。该 workflow 合入默认分支后，自动检测与自动发布才会按计划执行。
 
