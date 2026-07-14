@@ -4,8 +4,8 @@ const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const SRC_DIR = path.join(PROJECT_ROOT, "src");
 const OUT_DIR = path.join(PROJECT_ROOT, "out");
 const PLATFORM = "mac-arm64";
-const APP_NAME = "Codex-rebuild";
-const APP_BUNDLE_NAME = "Codex-rebuild.app";
+const APP_NAME = "ChatGPT-Rebuild";
+const APP_BUNDLE_NAME = "ChatGPT-Rebuild.app";
 const BUNDLE_ID = "io.github.itstarts.codex-rebuild";
 const FEED_URL =
   "https://github.com/itstarts/codex-app-rebuild/releases/latest/download/appcast-darwin-arm64.xml";

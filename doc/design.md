@@ -2,7 +2,7 @@
 
 ## 设计目标
 
-本项目构建 macOS arm64 个人可用版 `Codex-rebuild.app`。系统从官方 Codex macOS arm64 包同步资源，在解包后的 ASAR 内容上执行最小必要 patch，重新打包并更新 ASAR integrity，再修改 app 身份、更新通道和签名，最后生成可由 Sparkle 更新的 zip 产物和 `appcast-darwin-arm64.xml`。
+本项目构建 macOS arm64 个人可用版 `ChatGPT-Rebuild.app`。系统从官方 Codex macOS arm64 包同步资源，在解包后的 ASAR 内容上执行最小必要 patch，重新打包并更新 ASAR integrity，再修改 app 身份、更新通道和签名，最后生成可由 Sparkle 更新的 zip 产物和 `appcast-darwin-arm64.xml`。
 
 设计原则：
 
@@ -19,7 +19,7 @@ flowchart TD
   A["sync-upstream-mac-arm64"] --> B["extract app.asar to work/asar"]
   B --> C["run minimal patch manifest"]
   C --> D["pack app.asar"]
-  D --> E["copy normalized upstream app bundle to out/mac-arm64/Codex-rebuild.app"]
+  D --> E["copy normalized upstream app bundle to out/mac-arm64/ChatGPT-Rebuild.app"]
   E --> F["replace app.asar and update ElectronAsarIntegrity"]
   F --> G["patch Info.plist identity and Sparkle config"]
   G --> H["codesign app"]
@@ -66,7 +66,7 @@ src/
     upstream-metadata.json
 out/
   mac-arm64/
-    Codex-rebuild.app
+    ChatGPT-Rebuild.app
   release/
     Codex-rebuild-darwin-arm64-<shortVersion>-<buildNumber>.zip
     appcast-darwin-arm64.xml
@@ -272,14 +272,14 @@ https://github.com/itstarts/codex-app-rebuild/releases/latest/download/appcast-d
 
 职责：
 
-- 复制 `upstream-metadata.json` 指向的规范化上游 app 到 `out/mac-arm64/Codex-rebuild.app`。
+- 复制 `upstream-metadata.json` 指向的规范化上游 app 到 `out/mac-arm64/ChatGPT-Rebuild.app`。
 - 将 patched `_asar` pack 为新的 `app.asar`。
-- 替换 `Codex-rebuild.app/Contents/Resources/app.asar`。
+- 替换 `ChatGPT-Rebuild.app/Contents/Resources/app.asar`。
 - 更新 `Info.plist` 的 `ElectronAsarIntegrity.Resources/app.asar.hash` 和 algorithm。
 - 修改主 app `Info.plist`：
   - `CFBundleIdentifier=io.github.itstarts.codex-rebuild`
-  - `CFBundleName=Codex-rebuild`
-  - `CFBundleDisplayName=Codex-rebuild`
+  - `CFBundleName=ChatGPT-Rebuild`
+  - `CFBundleDisplayName=ChatGPT-Rebuild`
   - `CFBundleShortVersionString=<upstream version>`
   - `CFBundleVersion=<REBUILD_BUILD_NUMBER>`
   - `SUFeedURL=<project feed URL>`
@@ -298,7 +298,7 @@ https://github.com/itstarts/codex-app-rebuild/releases/latest/download/appcast-d
 
 签名策略：
 
-- 默认命令：`codesign --sign - --force --deep out/mac-arm64/Codex-rebuild.app`
+- 默认命令：`codesign --sign - --force --deep out/mac-arm64/ChatGPT-Rebuild.app`
 - 指定环境变量 `CODESIGN_IDENTITY` 时使用该身份签名。
 - 签名后必须运行 `codesign --verify --deep --strict`。
 
@@ -379,7 +379,7 @@ YYYYMMDDHHMMSSNN
 
 静态验证：
 
-- `out/mac-arm64/Codex-rebuild.app` 存在。
+- `out/mac-arm64/ChatGPT-Rebuild.app` 存在。
 - `CFBundleIdentifier`、`CFBundleName`、`CFBundleDisplayName` 符合需求。
 - `CFBundleExecutable` 等于同步元数据中的 `upstreamExecutable`，且对应 `Contents/MacOS/<upstreamExecutable>` 为可执行的普通文件。
 - helper app bundle id 均位于 `io.github.itstarts.codex-rebuild` 命名空间。

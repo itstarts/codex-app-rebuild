@@ -2,11 +2,11 @@
 
 [English](README.md) | 简体中文
 
-面向个人 `Codex-rebuild.app` 发布渠道的非官方 macOS arm64 重构建工具链。
+面向个人 `ChatGPT-Rebuild.app` 发布渠道的非官方 macOS arm64 重构建工具链。
 
 本仓库包含脚本、测试和文档，用于对本地下载的 Codex Desktop App 进行重构建，并应用一组范围明确的补丁：
 
-- 将应用标识修改为 `Codex-rebuild.app` / `io.github.itstarts.codex-rebuild`
+- 将应用标识修改为 `ChatGPT-Rebuild.app` / `io.github.itstarts.codex-rebuild`
 - 将 Sparkle 更新源指向本仓库的 GitHub Releases
 - 调整“关于”面板中的版权字符串
 - 修补 Fast 模式和内置能力的部分客户端功能门控

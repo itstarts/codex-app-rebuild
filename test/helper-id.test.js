@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const { APP_NAME, BUNDLE_ID, FEED_URL } = require("../scripts/lib/constants");
+const { APP_BUNDLE_NAME, APP_NAME, BUNDLE_ID, FEED_URL } = require("../scripts/lib/constants");
 const {
   updateAsarIntegrity,
   mapHelperBundleId,
@@ -69,7 +69,7 @@ function helperInfoPath(appPath, helperName) {
 
 function createAppFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-helper-ids-"));
-  const appPath = path.join(root, "Codex-rebuild.app");
+  const appPath = path.join(root, APP_BUNDLE_NAME);
   writePlist(path.join(appPath, "Contents", "Info.plist"), {
     CFBundleIdentifier: "com.openai.codex",
     CFBundleName: "Codex",
@@ -141,6 +141,16 @@ test("helper bundle ids are deterministic and unique", () => {
     "io.github.itstarts.codex-rebuild.helper.Renderer",
   ]);
   assert.equal(new Set(mapped).size, mapped.length);
+});
+
+test("project identity uses the ChatGPT-Rebuild app name while preserving repository and bundle id", () => {
+  assert.equal(APP_NAME, "ChatGPT-Rebuild");
+  assert.equal(APP_BUNDLE_NAME, "ChatGPT-Rebuild.app");
+  assert.equal(BUNDLE_ID, "io.github.itstarts.codex-rebuild");
+  assert.equal(
+    FEED_URL,
+    "https://github.com/itstarts/codex-app-rebuild/releases/latest/download/appcast-darwin-arm64.xml",
+  );
 });
 
 test("path-aware helper mapping preserves unknown prefixed helper suffixes", () => {
