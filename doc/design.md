@@ -183,13 +183,14 @@ out/
    - 对已人工复核的上游版本/build，先校验原始 `app.asar` SHA-256，并校验五个关键角色对应的一至多个模块在原始 ASAR、解包工作树和版本清单中的字节哈希完全一致。同一物理模块可以承担多个角色，但共享路径必须声明相同 SHA-256。
    - 在哈希校验通过后，使用 AST 验证 Fast=`priority`、Standard=官方默认行为、UI setter、请求 resolver，以及 `start-conversation` 和 `start-turn-for-host` 两条请求链路。
    - 已登记版本/build 如果出现未知 ASAR 哈希、模块哈希或结构变化，必须失败且不得回退到旧扫描逻辑。
-   - 未登记的上游版本保留旧的结构化扫描兼容路径；若只能找到 UI gate，找不到请求 payload 构造点或原生 tier 证据，patch 必须失败。
+   - 未登记的上游版本先按稳定语义标记发现五个角色，要求 AST 组合唯一，并验证原始 ASAR 与解包工作树中被选模块的字节一致；bundle 文件名、无关代码和整体 raw hash 变化不需要预登记。
+   - 自动发现缺失或歧义时回退到旧的结构化扫描兼容路径；若只能找到 UI gate，既找不到完整跨 bundle 链路，也找不到请求 payload 构造点或原生 tier 证据，patch 必须失败。
    - 通过版本绑定校验的请求层保持上游原生逻辑，且请求文本 patch 命中数必须为零。
 
 验证策略：
 
 - 静态 dry-run 输出两类规则的匹配。
-- 对版本绑定校验输出上游版本/build、原始 ASAR 哈希、五个角色在一个或多个模块中的清单/ASAR/工作树哈希，以及两条请求 action 的 AST 证据。
+- 输出校验来源（`reviewed-hash`、`structural` 或 `legacy`）；哈希/结构校验还输出上游版本/build、原始 ASAR 哈希、五个角色的 ASAR/工作树哈希，以及两条请求 action 的 AST 证据。
 - 运行时可观察请求验证使用本地代理或 mock endpoint 捕获请求 payload，分别触发 Fast 和 Standard，确认 tier 不同。
 - 请求验证必须保存两条证据：`fast-request.json` 和 `standard-request.json`，其中 tier 字段分别可解析为 `fast` 或上游 Fast 等价值，以及 `standard` 或上游 Standard 等价值；当前上游 Fast 等价值为 `priority`。
 - 若上游字段从 `service_tier` 改名，patch 必须失败并提示人工复核。
@@ -250,10 +251,11 @@ https://github.com/itstarts/codex-app-rebuild/releases/latest/download/appcast-d
 - 确认 `shouldIncludeSparkle` 和 `shouldIncludeUpdater` 没有被替换成固定 false。
 - 验证 `Contents/Frameworks/Sparkle.framework` 或上游等价 Sparkle resource 存在。
 - 在 ASAR 中通过同一顶层 container 的两个 predicate、精确 CommonJS getter 和同一 consumer 的双调用链，唯一定位主进程 updater 模块；未消费的 worker 副本不作为候选。
-- updater definition、build-flavor 和主进程 consumer 三个模块必须同时命中同一组已人工复核的源文件 SHA-256；任一字节变化都必须失败并触发重新评审，不能仅凭局部 AST 或方法名调用继续放行。
+- updater definition、build-flavor 和主进程 consumer 的已知 SHA-256 组合作为审计指纹；未知 raw hash 不单独阻断，但必须通过下述完整结构与静态求值校验。
 - 对 updater 模块实际 require 的 build-flavor chunk 验证 `As` 或 `qs` getter，要求最终来源为 `Dev/Agent/Nightly/InternalAlpha/PublicBeta/Prod` 六项精确值。
 - 静态求值只接受单条 return 的纯 helper，并拒绝宽松相等、参与求值的 binding、container、consumer alias 或 build-flavor namespace 被重赋值、删除、成员改写或通过别名逃逸。
 - `require`、`module.require`、`Object`、`exports`、`process` 等宿主绑定必须保持可信；updater 模块不得加载 CommonJS loader 改写加载路径，`process.env` 及其别名只允许只读使用。
+- consumer 的两个 predicate 必须在同一可达作用域各调用一次，并传入生产 build flavor、`darwin`/`process.platform` 和未被 shadow 的 `process.env`；参与静态求值的 `Array.prototype.includes` 不得被改写。
 - 用当前产物元数据求值两个 predicate，证明 macOS arm64 prod 构建会包含 Sparkle；未知导出、动态 require、shadowing、歧义或结构变化均立即失败。
 
 失败策略：

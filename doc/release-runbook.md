@@ -35,7 +35,7 @@ workflow 输入：
 - `allow_no_previous_release`：首次发布且没有可读取历史 appcast 时才设为 true。
 - `force_build`：手动触发时即使官方版本已存在 rebuild appcast，也生成新的候选构建。
 
-schedule 触发会在发现 latest feed 缺少当前官方更新时重新构建并自动发布 latest release，不复用或直接推广历史 draft/非 latest 候选。发布完成后，本地旧版 app 通过 latest appcast 检测到更新。自动发布路径包含单元测试、静态 patch 检查、三模块 updater 哈希门禁、构建验证、Sparkle 签名验证和 appcast 生成验证；本机交互运行时证据仍可按下方步骤在发布后复核。
+schedule 触发会在发现 latest feed 缺少当前官方更新时重新构建并自动发布 latest release，不复用或直接推广历史 draft/非 latest 候选。发布完成后，本地旧版 app 通过 latest appcast 检测到更新。自动发布路径包含单元测试、静态 patch 检查、Fast tier 跨 bundle 结构校验、updater 三模块结构与静态求值校验、构建验证、Sparkle 签名验证和 appcast 生成验证；已知 raw hash 仅作为审计指纹，本机交互运行时证据仍可按下方步骤在发布后复核。
 
 首次自动发布时，如果检查阶段确认当前 rebuild channel 没有任何已知 appcast，workflow 会自动允许无历史构建号首发。后续发布仍会从 latest feed 和 GitHub Releases 读取已发布最大 `sparkle:version`，并要求候选 `REBUILD_BUILD_NUMBER` 严格递增。
 
@@ -141,7 +141,7 @@ grep "${ZIP_NAME}" /tmp/codex-rebuild-appcast.xml
 
 ## 运行时证据与验证
 
-`npm run verify:static` 是自动发布上传前的强制静态门禁，不依赖请求抓包文件；它验证应用身份、ASAR、三模块 updater 组合哈希、Sparkle/appcast、codesign 和构建号。`npm run verify` 在相同静态检查之外，还要求运行时请求证据存在：
+`npm run verify:static` 是自动发布上传前的强制静态门禁，不依赖请求抓包文件；它验证应用身份、ASAR、updater 唯一导出/消费链与生产环境静态求值、Sparkle/appcast、codesign 和构建号。已知三模块组合 hash 会记录为审计结果，未知 hash 在完整语义校验通过后允许继续。`npm run verify` 在相同静态检查之外，还要求运行时请求证据存在：
 
 - `out/verify/fast-request.json`
 - `out/verify/standard-request.json`

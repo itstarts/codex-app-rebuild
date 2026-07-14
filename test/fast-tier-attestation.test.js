@@ -8,6 +8,7 @@ const { packAsar } = require("../scripts/lib/asar-utils");
 const {
   runFastModePatch,
   verifyFastTierAttestation,
+  verifyFastTierIntegrity,
 } = require("../scripts/patch-fast-mode");
 const {
   FAST_TIER_ATTESTATIONS,
@@ -87,6 +88,7 @@ async function createFixture(
     manifestSources = workSources,
     omitAsarRoles = [],
     asarDirectoryRoles = [],
+    extraSources = {},
   } = {},
 ) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fast-tier-attestation-"));
@@ -111,6 +113,14 @@ async function createFixture(
     const workFile = path.join(extractedRoot, ...relativePath.split("/"));
     fs.mkdirSync(path.dirname(workFile), { recursive: true });
     fs.writeFileSync(workFile, workSources[role], "utf8");
+  }
+  for (const [relativePath, source] of Object.entries(extraSources)) {
+    const asarFile = path.join(asarSource, ...relativePath.split("/"));
+    const workFile = path.join(extractedRoot, ...relativePath.split("/"));
+    fs.mkdirSync(path.dirname(asarFile), { recursive: true });
+    fs.mkdirSync(path.dirname(workFile), { recursive: true });
+    fs.writeFileSync(asarFile, source, "utf8");
+    fs.writeFileSync(workFile, source, "utf8");
   }
   fs.mkdirSync(path.dirname(asarPath), { recursive: true });
   await packAsar(asarSource, asarPath);
@@ -154,6 +164,16 @@ function verifyFixture(fixture, overrides = {}) {
     projectRoot: fixture.root,
     metadata: fixture.metadata,
     manifests: fixture.manifests,
+    ...overrides,
+  });
+}
+
+function verifyIntegrityFixture(fixture, overrides = {}) {
+  return verifyFastTierIntegrity({
+    projectRoot: fixture.root,
+    metadata: fixture.metadata,
+    manifests: fixture.manifests,
+    candidateFiles: fixtureWorkFiles(fixture),
     ...overrides,
   });
 }
@@ -353,47 +373,6 @@ test("upstream 26.707.61608 attestation maps five roles across five reviewed mod
   });
 });
 
-test("upstream 26.707.71524 attestation maps five roles across four reviewed modules", () => {
-  const manifest = FAST_TIER_ATTESTATIONS.find(
-    (entry) =>
-      entry.upstreamVersion === "26.707.71524" &&
-      entry.upstreamBuild === "5263",
-  );
-
-  assert.deepEqual(manifest, {
-    upstreamVersion: "26.707.71524",
-    upstreamBuild: "5263",
-    appAsarSha256: "d28f31b4bbb04c519be65c2af8277d8c5faf77b4239ee89b928f0a7423dacd84",
-    modules: [
-      {
-        role: "serviceTier",
-        path: "webview/assets/app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~gwqc41kz-CnQKtQ6U.js",
-        sha256: "beed8b3ca3f499be57fe3603e326b05eab99d29c3d69476456374f8bc2f4b6df",
-      },
-      {
-        role: "requestResolver",
-        path: "webview/assets/app-initial~app-main~onboarding-page~hotkey-window-thread-page~quick-chat-window-page~chatg~gwqc41kz-CnQKtQ6U.js",
-        sha256: "beed8b3ca3f499be57fe3603e326b05eab99d29c3d69476456374f8bc2f4b6df",
-      },
-      {
-        role: "mainUi",
-        path: "webview/assets/app-initial~app-main~onboarding-page-qmFVRsFx.js",
-        sha256: "99169976a3a20b02980beae3eef89ad3a6d31729a4df4b8a9df2c9d596f69653",
-      },
-      {
-        role: "uiConsumer",
-        path: "webview/assets/app-initial~app-main~new-thread-panel-page~appgen-library-page~hotkey-window-thread-page~ho~iufn7mg3-BWgIh_w6.js",
-        sha256: "b6c759715525213966578c049e0ee90391a021afcb2c23f835e72ada8fd27ad3",
-      },
-      {
-        role: "actionConsumer",
-        path: "webview/assets/review-mode-content-BoINBFNt.js",
-        sha256: "fc1d1c4482ca6ca065f0dfed197948bb02dce0a01317c27ef6e337e49a15d349",
-      },
-    ],
-  });
-});
-
 test("manifest allows reviewed roles to share one physical module", async (t) => {
   const sources = {
     ...MODULE_SOURCES,
@@ -428,6 +407,47 @@ test("unknown valid upstream keeps the legacy compatibility path", async (t) => 
   fixture.metadata.upstreamVersion = "99.1.1";
 
   assert.deepEqual(verifyFixture(fixture), { required: false, evidence: [] });
+});
+
+test("unknown upstream uses one complete structural mapping without raw hash registration", async (t) => {
+  const fixture = await createFixture(t);
+  fixture.metadata.upstreamVersion = "99.1.1";
+
+  const result = verifyIntegrityFixture(fixture);
+
+  assert.equal(result.required, true);
+  assert.equal(result.provenance, "structural");
+  assert.deepEqual(
+    result.evidence.map((item) => item.action).sort(),
+    ["start-conversation", "start-turn-for-host"],
+  );
+});
+
+test("ambiguous structural mappings fall back instead of being auto-attested", async (t) => {
+  const duplicatePath = "webview/assets/action-consumer-copy.js";
+  const fixture = await createFixture(t, {
+    extraSources: { [duplicatePath]: MODULE_SOURCES.actionConsumer },
+  });
+  fixture.metadata.upstreamVersion = "99.1.1";
+  const duplicateFile = path.join(fixture.extractedRoot, ...duplicatePath.split("/"));
+
+  const result = verifyIntegrityFixture(fixture, {
+    candidateFiles: [...fixtureWorkFiles(fixture), duplicateFile],
+  });
+
+  assert.equal(result.required, false);
+  assert.equal(result.provenance, "legacy");
+});
+
+test("structural discovery still rejects original and extracted byte drift", async (t) => {
+  const fixture = await createFixture(t);
+  fixture.metadata.upstreamVersion = "99.1.1";
+  fs.appendFileSync(
+    path.join(fixture.extractedRoot, ...MODULES.mainUi.split("/")),
+    ";const unrelated=true",
+  );
+
+  expectCode(() => verifyIntegrityFixture(fixture), "attestation_role_hash_mismatch");
 });
 
 test("invalid metadata cannot fall back to legacy analysis", async (t) => {

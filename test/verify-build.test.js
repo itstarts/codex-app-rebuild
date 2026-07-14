@@ -265,21 +265,6 @@ test("reviewed updater chains include upstream 26.707.61608 final patched tuple"
   );
 });
 
-test("reviewed updater chains include upstream 26.707.71524 final patched tuple", () => {
-  assert.deepEqual(
-    REVIEWED_UPDATER_CALL_CHAINS.find(
-      (entry) =>
-        entry.consumerHash ===
-        "23b6541ecda71e19473b28b7afb1794d936d5428b791634ad4d9727f111c40d1",
-    ),
-    {
-      definitionHash: "7af97450ed4b3accc73cfb1bcc87fb666b9f8033d4ee68dc562648c54ee2cedd",
-      buildFlavorHash: "5c436ced43c0b649de367fe9b60dd8a2ef6897551dfe2eb3c4012ba9a14e6df8",
-      consumerHash: "23b6541ecda71e19473b28b7afb1794d936d5428b791634ad4d9727f111c40d1",
-    },
-  );
-});
-
 test("verifyRequestEvidence requires fast and standard captured tiers", () => {
   const dir = createEvidenceDir();
 
@@ -916,35 +901,71 @@ test("verifyUpdaterNotDisabled requires an unshadowed dual-call consumer", async
   });
 });
 
-test("verifyUpdaterNotDisabled requires reviewed updater call-chain source hashes", async (t) => {
+test("verifyUpdaterNotDisabled accepts unreviewed hashes only after structural verification", async (t) => {
+  const fixture = await createUpdaterFixture(t, {
+    definitionSource: updaterDefinitionSource({ exportKey: "qs" }),
+  });
+
+  const result = verifyUpdaterNotDisabledRaw(fixture.app, fixture.asarPath);
+
+  assert.equal(result.reviewed, false);
+  assert.match(result.hashes.definitionHash, /^[0-9a-f]{64}$/);
+  assert.match(result.hashes.buildFlavorHash, /^[0-9a-f]{64}$/);
+  assert.match(result.hashes.consumerHash, /^[0-9a-f]{64}$/);
+});
+
+test("verifyUpdaterNotDisabled rejects unsafe unreviewed consumers and modules", async (t) => {
   const definitionName = "file-based-logger-fixture.js";
   const callPair =
     "i.a.shouldIncludeSparkle('dev','linux',process.env);i.a.shouldIncludeUpdater('dev','linux',process.env);";
   const cases = [
-    { name: "otherwise valid fixture" },
     {
       name: "wrong runtime arguments",
       consumerSource: `const i=require('./${definitionName}');function boot(){${callPair}}`,
+      expected: /production build flavor.*darwin platform/i,
     },
     {
       name: "statically unreachable calls",
-      consumerSource: `const i=require('./${definitionName}');if(false){${callPair}}`,
+      consumerSource:
+        `const i=require('./${definitionName}');` +
+        "if(false){i.a.shouldIncludeSparkle('prod','darwin',process.env);" +
+        "i.a.shouldIncludeUpdater('prod','darwin',process.env)}",
+      expected: /statically unreachable/i,
+    },
+    {
+      name: "shadowed process runtime metadata",
+      consumerSource:
+        `const i=require('./${definitionName}');` +
+        "function boot(process){i.a.shouldIncludeSparkle('prod',process.platform,process.env);" +
+        "i.a.shouldIncludeUpdater('prod',process.platform,process.env)}",
+      expected: /production build flavor.*darwin platform/i,
+    },
+    {
+      name: "mutated build flavor binding",
+      consumerSource:
+        `const i=require('./${definitionName}');` +
+        "function boot(){let{buildFlavor:o}=runtime();o='dev';" +
+        "i.a.shouldIncludeSparkle(o,process.platform,process.env);" +
+        "i.a.shouldIncludeUpdater(o,process.platform,process.env)}",
+      expected: /production build flavor.*darwin platform/i,
     },
     {
       name: "updater definition prototype side effect",
       definitionSource:
         `${updaterDefinitionSource({ exportKey: "qs" })}\n` +
         "Array.prototype.includes=()=>false;",
+      expected: /prototype mutation/i,
     },
     {
       name: "build flavor prototype side effect",
       buildFlavorSource:
         `${buildFlavorModuleSource()}\n` +
         "Array.prototype.includes=()=>false;",
+      expected: /prototype mutation/i,
     },
   ];
 
-  for (const { name, ...options } of cases) {
+  for (const { name, expected, ...options } of cases) {
     await t.test(name, async (t) => {
       const fixture = await createUpdaterFixture(t, {
         definitionSource: updaterDefinitionSource({ exportKey: "qs" }),
@@ -952,7 +973,7 @@ test("verifyUpdaterNotDisabled requires reviewed updater call-chain source hashe
       });
       assert.throws(
         () => verifyUpdaterNotDisabledRaw(fixture.app, fixture.asarPath),
-        /updater call-chain source hashes.*not reviewed/i,
+        expected,
       );
     });
   }
