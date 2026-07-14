@@ -265,6 +265,21 @@ test("reviewed updater chains include upstream 26.707.61608 final patched tuple"
   );
 });
 
+test("reviewed updater chains include upstream 26.707.71524 final patched tuple", () => {
+  assert.deepEqual(
+    REVIEWED_UPDATER_CALL_CHAINS.find(
+      (entry) =>
+        entry.consumerHash ===
+        "23b6541ecda71e19473b28b7afb1794d936d5428b791634ad4d9727f111c40d1",
+    ),
+    {
+      definitionHash: "7af97450ed4b3accc73cfb1bcc87fb666b9f8033d4ee68dc562648c54ee2cedd",
+      buildFlavorHash: "5c436ced43c0b649de367fe9b60dd8a2ef6897551dfe2eb3c4012ba9a14e6df8",
+      consumerHash: "23b6541ecda71e19473b28b7afb1794d936d5428b791634ad4d9727f111c40d1",
+    },
+  );
+});
+
 test("verifyRequestEvidence requires fast and standard captured tiers", () => {
   const dir = createEvidenceDir();
 
