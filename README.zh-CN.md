@@ -56,7 +56,7 @@ npm run verify
 
 ## 自动发布流程
 
-`.github/workflows/release-candidate.yml` 每天北京时间 07:00 运行一次。它会检查官方 macOS arm64 appcast；如果当前重构建渠道缺少新的官方更新，workflow 会自动构建、签名、上传并发布 latest GitHub Release。
+`.github/workflows/release-candidate.yml` 每 6 小时运行一次，执行时间为北京时间每天 01:00、07:00、13:00、19:00。它会检查官方 macOS arm64 appcast；如果当前重构建渠道缺少新的官方更新，workflow 会自动构建、签名、上传并发布 latest GitHub Release；没有更新时不构建、不发布。成功发布 latest 后，workflow 只保留最近 2 个已发布、非 draft Release，删除更旧的 Release 对象，同时保留对应 Git tag 和所有 draft。
 
 手动触发支持以下模式：
 

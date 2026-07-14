@@ -2,8 +2,8 @@ name: Release Candidate
 
 on:
   schedule:
-    # 07:00 Asia/Shanghai, daily. GitHub cron uses UTC.
-    - cron: "0 23 * * *"
+    # 01:00, 07:00, 13:00, and 19:00 Asia/Shanghai. GitHub cron uses UTC.
+    - cron: "0 5,11,17,23 * * *"
   workflow_dispatch:
     inputs:
       release_mode:
@@ -231,6 +231,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Download release candidate artifact
         uses: actions/download-artifact@v8
         with:
@@ -315,3 +318,10 @@ jobs:
           fi
 
           echo "Release ${RELEASE_TAG} contains the zip and appcast in ${release_mode} mode."
+
+      - name: Prune old published releases
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.release_mode == 'latest-release' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_RETENTION_COUNT: "2"
+        run: node scripts/prune-github-releases.js

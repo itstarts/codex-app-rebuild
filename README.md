@@ -56,7 +56,7 @@ npm run verify
 
 ## Automated Release Flow
 
-`.github/workflows/release-candidate.yml` runs once per day at 07:00 Asia/Shanghai. It checks the official macOS arm64 appcast. When a new official update is missing from this rebuild channel, the workflow builds, signs, uploads, and publishes a latest GitHub Release automatically.
+`.github/workflows/release-candidate.yml` runs every six hours at 01:00, 07:00, 13:00, and 19:00 Asia/Shanghai. It checks the official macOS arm64 appcast. When a new official update is missing from this rebuild channel, the workflow builds, signs, uploads, and publishes a latest GitHub Release automatically; when no update is available, it does not build or publish. After a successful latest release, the workflow keeps the newest two published, non-draft GitHub Releases, deletes older Release objects, and preserves their Git tags and every draft.
 
 Manual dispatch supports:
 
