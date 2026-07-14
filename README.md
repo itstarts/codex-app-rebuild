@@ -2,11 +2,11 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Unofficial macOS arm64 rebuild tooling for a personal `Codex-rebuild.app` release channel.
+Unofficial macOS arm64 rebuild tooling for a personal `ChatGPT-Rebuild.app` release channel.
 
 This repository contains scripts, tests, and documentation for rebuilding a locally downloaded Codex Desktop app with a narrow set of patches:
 
-- app identity is changed to `Codex-rebuild.app` / `io.github.itstarts.codex-rebuild`
+- app identity is changed to `ChatGPT-Rebuild.app` / `io.github.itstarts.codex-rebuild`
 - the Sparkle update feed points to this repository's GitHub Releases
 - the About copyright string is adjusted
 - selected client-side gates for fast mode and bundled capabilities are patched

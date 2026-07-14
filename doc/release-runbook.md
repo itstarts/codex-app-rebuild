@@ -1,6 +1,6 @@
 # Release Runbook
 
-本文档记录 release 的端到端命令顺序。GitHub Actions 会根据官方 appcast 定时生成产物，并在发现新官方版本时自动发布为 latest release；本地旧版 `Codex-rebuild.app` 读取 `releases/latest/download/appcast-darwin-arm64.xml` 后即可检测到可安装更新。手工命令用于本地复核、回滚和人工补发。
+本文档记录 release 的端到端命令顺序。GitHub Actions 会根据官方 appcast 定时生成产物，并在发现新官方版本时自动发布为 latest release；本地现有 `Codex-rebuild.app` 读取 `releases/latest/download/appcast-darwin-arm64.xml` 后即可检测到可安装更新，升级后的 app 名为 `ChatGPT-Rebuild`。手工命令用于本地复核、回滚和人工补发。
 
 ## 前置条件
 
@@ -105,8 +105,8 @@ test -s "out/release/appcast-darwin-arm64.xml"
 npm run verify:static
 
 mkdir -p out/verify
-# 用发布产物 out/mac-arm64/Codex-rebuild.app 捕获 Fast 请求体并保存为 out/verify/fast-request.json
-# 用发布产物 out/mac-arm64/Codex-rebuild.app 捕获 Standard 请求体并保存为 out/verify/standard-request.json
+# 用发布产物 out/mac-arm64/ChatGPT-Rebuild.app 捕获 Fast 请求体并保存为 out/verify/fast-request.json
+# 用发布产物 out/mac-arm64/ChatGPT-Rebuild.app 捕获 Standard 请求体并保存为 out/verify/standard-request.json
 test -s out/verify/fast-request.json
 test -s out/verify/standard-request.json
 npm run verify
@@ -146,7 +146,7 @@ grep "${ZIP_NAME}" /tmp/codex-rebuild-appcast.xml
 - `out/verify/fast-request.json`
 - `out/verify/standard-request.json`
 
-用发布产物 `out/mac-arm64/Codex-rebuild.app` 启动应用，通过本地 mock、代理日志或等价请求捕获方式分别触发 Fast 与 Standard 请求。保存给 verifier 的 JSON 顶层必须包含 `service_tier`、`serviceTier` 或 `tier` 字段；Fast 文件的值为 `fast` 或上游 Fast 等价值，Standard 文件的值为 `standard`，或保持上游 Standard 等价空值。当前上游 Fast 等价值为 `priority`。
+用发布产物 `out/mac-arm64/ChatGPT-Rebuild.app` 启动应用，通过本地 mock、代理日志或等价请求捕获方式分别触发 Fast 与 Standard 请求。保存给 verifier 的 JSON 顶层必须包含 `service_tier`、`serviceTier` 或 `tier` 字段；Fast 文件的值为 `fast` 或上游 Fast 等价值，Standard 文件的值为 `standard`，或保持上游 Standard 等价空值。当前上游 Fast 等价值为 `priority`。
 
 ```bash
 set -euo pipefail
@@ -166,4 +166,4 @@ npm run verify
 2. 启动旧版 `Codex-rebuild.app`，确认 About 面板和当前 build number 是旧版本。
 3. 通过 app 内更新入口检查更新，确认读取 latest `appcast-darwin-arm64.xml` 后发现本次 `REBUILD_BUILD_NUMBER`。
 4. 执行更新安装。ad-hoc 或自签产物可能触发 Gatekeeper、quarantine、权限确认或密码输入，按系统提示确认。
-5. 重新启动后确认 bundle id 仍为 `io.github.itstarts.codex-rebuild`，app 名仍为 `Codex-rebuild`，feed URL 仍指向 GitHub latest appcast，`CFBundleVersion` 等于本次 `REBUILD_BUILD_NUMBER`。
+5. 重新启动后确认 bundle id 仍为 `io.github.itstarts.codex-rebuild`，app 名仍为 `ChatGPT-Rebuild`，feed URL 仍指向 GitHub latest appcast，`CFBundleVersion` 等于本次 `REBUILD_BUILD_NUMBER`。

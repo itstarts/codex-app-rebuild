@@ -2,11 +2,11 @@
 
 ## 目标
 
-构建一个仅面向个人使用的 macOS 版 `Codex-rebuild.app`。实现方式参考 `Haleclipse/CodexDesktop-Rebuild` 的官方包下载、ASAR 解包、AST/结构化 patch、ASAR 重包、完整性 hash 更新和重新签名流程，但当前阶段只保留用户明确需要的功能改动。
+构建一个仅面向个人使用的 macOS 版 `ChatGPT-Rebuild.app`。实现方式参考 `Haleclipse/CodexDesktop-Rebuild` 的官方包下载、ASAR 解包、AST/结构化 patch、ASAR 重包、完整性 hash 更新和重新签名流程，但当前阶段只保留用户明确需要的功能改动。
 
 产物必须满足：
 
-- 固定 app 名：`Codex-rebuild.app`
+- 固定 app 名：`ChatGPT-Rebuild.app`
 - 固定 bundle id：`io.github.itstarts.codex-rebuild`
 - 当前阶段只支持 macOS arm64
 - 保留 Codex app 内部更新入口，点击更新时下载并安装本项目发布的重构版本
@@ -54,8 +54,8 @@
    - 解包并 patch `app.asar`。
    - 重包后更新 `Info.plist` 中的 `ElectronAsarIntegrity.Resources/app.asar.hash`。
    - 修改 `CFBundleIdentifier` 为 `io.github.itstarts.codex-rebuild`。
-   - app bundle 目录名必须为 `Codex-rebuild.app`。
-   - `CFBundleName` 和 `CFBundleDisplayName` 必须为 `Codex-rebuild`。
+   - app bundle 目录名必须为 `ChatGPT-Rebuild.app`。
+   - `CFBundleName` 和 `CFBundleDisplayName` 必须为 `ChatGPT-Rebuild`。
    - 当前阶段保留上游 `CFBundleExecutable` 及其对应的 `Contents/MacOS/<CFBundleExecutable>`，不重命名主可执行文件。
    - 嵌套 helper app 的 bundle id 必须改到 `io.github.itstarts.codex-rebuild` 命名空间下，避免和官方 Codex helper 冲突。
    - 默认使用 `codesign --sign - --force --deep` 进行 ad-hoc 签名。
@@ -186,10 +186,10 @@
 
 ## 验收标准
 
-- `Codex-rebuild.app` 可以从输出目录启动。
-- `test -d out/mac-arm64/Codex-rebuild.app` 成立。
+- `ChatGPT-Rebuild.app` 可以从输出目录启动。
+- `test -d out/mac-arm64/ChatGPT-Rebuild.app` 成立。
 - `plutil` 检查 `CFBundleIdentifier` 为 `io.github.itstarts.codex-rebuild`。
-- `plutil` 检查 `CFBundleName` 和 `CFBundleDisplayName` 为 `Codex-rebuild`。
+- `plutil` 检查 `CFBundleName` 和 `CFBundleDisplayName` 为 `ChatGPT-Rebuild`。
 - `plutil` 检查 `CFBundleExecutable` 等于同步元数据中的 `upstreamExecutable`，且对应 `Contents/MacOS/<upstreamExecutable>` 为可执行的普通文件。
 - `plutil` 检查所有 helper app 的 bundle id 均以 `io.github.itstarts.codex-rebuild` 开头。
 - `plutil` 检查更新 feed 指向 `https://github.com/itstarts/codex-app-rebuild/releases/latest/download/appcast-darwin-arm64.xml`。
