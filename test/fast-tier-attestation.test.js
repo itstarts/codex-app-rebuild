@@ -178,10 +178,14 @@ function verifyIntegrityFixture(fixture, overrides = {}) {
   });
 }
 
-function fixtureWorkFiles(fixture) {
+function roleFiles(root) {
   return Object.values(MODULES).map((relativePath) =>
-    path.join(fixture.extractedRoot, ...relativePath.split("/")),
+    path.join(root, ...relativePath.split("/")),
   );
+}
+
+function fixtureWorkFiles(fixture) {
+  return roleFiles(fixture.extractedRoot);
 }
 
 function createLegacyEvidenceFile(fixture) {
@@ -201,6 +205,22 @@ test("version-bound Fast tier attestation proves both request actions", async (t
   const fixture = await createFixture(t);
 
   const result = verifyFixture(fixture);
+
+  assert.equal(result.required, true);
+  assert.deepEqual(
+    result.evidence.map((item) => item.action).sort(),
+    ["start-conversation", "start-turn-for-host"],
+  );
+});
+
+test("module hashes are audit metadata instead of a Fast tier hard gate", async (t) => {
+  const fixture = await createFixture(t);
+  const manifests = clone(fixture.manifests);
+  for (const module of manifests[0].modules) {
+    module.sha256 = "0".repeat(64);
+  }
+
+  const result = verifyFixture(fixture, { manifests });
 
   assert.equal(result.required, true);
   assert.deepEqual(
@@ -708,6 +728,35 @@ test("patch orchestration uses the original attested snapshot in check and patch
 
     assert.equal(result.attestation.required, true);
     assert.doesNotThrow(() => verifyFixture(fixture));
+  });
+
+  await t.test("check mode can use a clean snapshot while the mutable work tree is patched", async (t) => {
+    const fixture = await createFixture(t);
+    const snapshotRoot = path.join(fixture.root, ".cache", "patch-check", "_asar");
+    fs.cpSync(fixture.extractedRoot, snapshotRoot, { recursive: true });
+    fs.appendFileSync(
+      path.join(fixture.extractedRoot, ...MODULES.serviceTier.split("/")),
+      "changed",
+    );
+
+    const result = runFastModePatch({
+      check: true,
+      assetBundles: roleFiles(snapshotRoot),
+      buildBundles: [],
+      metadata: fixture.metadata,
+      manifests: fixture.manifests,
+      projectRoot: fixture.root,
+      workRoot: snapshotRoot,
+    });
+
+    assert.equal(result.attestation.required, true);
+    assert.equal(
+      fs.readFileSync(
+        path.join(fixture.extractedRoot, ...MODULES.serviceTier.split("/")),
+        "utf8",
+      ).endsWith("changed"),
+      true,
+    );
   });
 
   await t.test("patch mode keeps pre-patch evidence after rewriting the gate", async (t) => {
