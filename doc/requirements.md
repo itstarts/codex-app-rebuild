@@ -35,7 +35,8 @@
      - computer use
      - `/goal` slash command
      - 相关 Statsig feature gate
-   - 允许修改上述能力直接依赖的默认 feature values、bundled plugin availability filter、`features.js_repl` 和 browser-use native peer authorization。
+   - 允许修改上述能力直接依赖的默认 feature values、bundled plugin availability filter 和 `features.js_repl`。
+   - 当前 `browser-use-peer-authorization.node` 及独立 Chrome Native Host 的代码签名校验保持上游行为，不纳入 rebuild 绕过范围。
    - 不允许修改 i18n、DevTools、archive delete、sunset gate、GPU、updater disable 等未列功能。
 
 4. 自有更新通道
@@ -138,7 +139,7 @@
 - 构建后的 app 必须绕过上述能力依赖的 Statsig gate。
 - 构建后的 app 必须使上述能力依赖的默认 feature values 返回 true。
 - 构建后的 app 必须保留 bundled plugin descriptor，但允许绕过 `isAvailable` 过滤以纳入 browser/computer 相关插件。
-- 构建后的 app 在 ad-hoc 或自签签名下必须绕过 browser-use native peer authorization 对 OpenAI Team ID 的硬编码检查。
+- ad-hoc 或自签产物不保证外部 Chrome 控制可用；当前 native peer authorization 和 Chrome Native Host 的签名校验失败不阻断 release。
 - 该功能不保证后端或账号权限支持；服务端拒绝时由原错误链路处理。
 
 ### R5. About 面板

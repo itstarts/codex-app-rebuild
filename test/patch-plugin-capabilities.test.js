@@ -75,33 +75,21 @@ test("generic goal/config helper, Vercel team helper, and authMethod UI do not g
   assert.deepEqual(patches, []);
 });
 
-test("native browser peer authorizer factory is replaced with an explicit rebuild bypass", () => {
+test("native browser peer authorizer is left unchanged", () => {
   const patches = collectAllCapabilityPatches(NATIVE_PEER_AUTHORIZER_SOURCE);
   const peerPatches = patches.filter(
     (patch) => patch.id === "browser_peer_authorization",
   );
-  assert.equal(peerPatches.length, 1);
+  assert.equal(peerPatches.length, 0);
 
   const output = applyTextPatches(NATIVE_PEER_AUTHORIZER_SOURCE, patches);
-  assert.match(output, /codex-rebuild-browser-peer-authorization-bypass/);
-  assert.match(output, /return\(\)=>\(\{authorized:!0\}\)/);
-  assert.doesNotMatch(output, /authorizeSocketPeer/);
+  assert.equal(output, NATIVE_PEER_AUTHORIZER_SOURCE);
+  assert.match(output, /authorizeSocketPeer/);
 
   const summary = inspectCapabilityTargets({ files: [withTempFile(output)] });
   assert.equal(summary.totals.browser_peer_authorization.patches, 0);
   assert.equal(summary.totals.browser_peer_authorization.evidence, 1);
   assert.ok(!summary.missingRules.includes("browser_peer_authorization"));
-});
-
-test("native browser peer authorization without a recognized factory or bypass fails closed", () => {
-  const file = withTempFile(
-    "const addon=`browser-use-peer-authorization.node`;function unknownPeerGate(socket){return inspectPeer(socket)}",
-  );
-  const summary = inspectCapabilityTargets({ files: [file] });
-
-  assert.equal(summary.totals.browser_peer_authorization.patches, 0);
-  assert.equal(summary.totals.browser_peer_authorization.evidence, 0);
-  assert.ok(summary.missingRules.includes("browser_peer_authorization"));
 });
 
 test("exported plugin catalog auth predicate is patched when called with authMethod", () => {

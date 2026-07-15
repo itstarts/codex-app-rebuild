@@ -62,16 +62,6 @@ const PEER_CONTEXT_NEEDLES = [
   "bundleidentifier",
 ];
 
-const PEER_NATIVE_ADDON = "browser-use-peer-authorization.node";
-const PEER_BYPASS_MARKER = "codex-rebuild-browser-peer-authorization-bypass";
-const PEER_NATIVE_FACTORY_NEEDLES = [
-  "readFromPackageMetadata",
-  "shouldIncludeBrowserUsePeerAuthorization",
-  "authorizeSocketPeer",
-  "resourcesPath",
-  "darwin",
-];
-
 const TARGET_PLUGIN_FEATURE_NEEDLES = [
   "inAppBrowserUseAllowed",
   "inAppBrowserUse",
@@ -227,25 +217,11 @@ function hasPluginAuthGateCandidate(source) {
   );
 }
 
-function hasLegacyPeerAuthorizationCandidate(source) {
+function hasPeerAuthorizationCandidate(source) {
   if (!hasAnyLower(source, PEER_CONTEXT_NEEDLES)) return false;
   return (
     /(teamId|TeamIdentifier)[\s\S]{0,120}(===|==)[\s\S]{0,120}(TC3A3QVN3A|OpenAI Team ID)/.test(source) ||
     /(TC3A3QVN3A|OpenAI Team ID)[\s\S]{0,120}(===|==)[\s\S]{0,120}(teamId|TeamIdentifier)/.test(source)
-  );
-}
-
-function hasNativePeerAuthorizationCandidate(source) {
-  return (
-    source.includes(PEER_NATIVE_ADDON) &&
-    PEER_NATIVE_FACTORY_NEEDLES.every((needle) => source.includes(needle))
-  );
-}
-
-function hasPeerAuthorizationCandidate(source) {
-  return (
-    hasNativePeerAuthorizationCandidate(source) ||
-    hasLegacyPeerAuthorizationCandidate(source)
   );
 }
 
@@ -471,9 +447,12 @@ function collectBundledPluginFilterPatches(context, results) {
 
 function collectPeerAuthorizationPatches(context, results) {
   const { source } = context;
-  const hasNativeCandidate = hasNativePeerAuthorizationCandidate(source);
-  const hasLegacyCandidate = hasLegacyPeerAuthorizationCandidate(source);
-  if (!hasNativeCandidate && !hasLegacyCandidate) return;
+  if (
+    !hasAnyLower(source, PEER_CONTEXT_NEEDLES) ||
+    !hasAny(source, ["OpenAI Team ID", "TC3A3QVN3A", "teamId", "TeamIdentifier"])
+  ) {
+    return;
+  }
   const ast = getAst(context);
   walkAst(ast, (node) => {
     const isFn =
@@ -483,22 +462,6 @@ function collectPeerAuthorizationPatches(context, results) {
     if (!isFn) return;
     const fnSource = source.slice(node.start, node.end);
 
-    if (
-      hasNativeCandidate &&
-      node.body?.type === "BlockStatement" &&
-      PEER_NATIVE_FACTORY_NEEDLES.every((needle) => fnSource.includes(needle))
-    ) {
-      addReplacementPatch(
-        results.browser_peer_authorization.patches,
-        "browser_peer_authorization",
-        node.body.start + 1,
-        node.body.end - 1,
-        `\`${PEER_BYPASS_MARKER}\`;return()=>({authorized:!0})`,
-      );
-      return;
-    }
-
-    if (!hasLegacyCandidate) return;
     if (
       !hasAnyLower(fnSource, PEER_CONTEXT_NEEDLES) ||
       !hasAny(fnSource, ["OpenAI Team ID", "TC3A3QVN3A", "teamId", "TeamIdentifier"])
@@ -575,8 +538,6 @@ function initSignals() {
     goalCandidateFound: false,
     pluginAuthCandidateFound: false,
     peerCandidateFound: false,
-    peerNativeAddonFound: false,
-    peerBypassFound: false,
   };
 }
 
@@ -589,12 +550,6 @@ function updateSignals(signals, source) {
   }
   if (hasPeerAuthorizationCandidate(source)) {
     signals.peerCandidateFound = true;
-  }
-  if (source.includes(PEER_NATIVE_ADDON)) {
-    signals.peerNativeAddonFound = true;
-  }
-  if (source.includes(PEER_BYPASS_MARKER)) {
-    signals.peerBypassFound = true;
   }
 }
 
@@ -616,14 +571,7 @@ function deriveAggregateEvidence(signals) {
       "scan 中未发现需要改写的 /goal、thread-goal 或 set-thread-goal 门控锚点",
     );
   }
-  if (signals.peerBypassFound) {
-    addEvidence(
-      results,
-      "browser_peer_authorization",
-      "already-patched",
-      "scan 中发现 codex rebuild browser peer authorization bypass 标记",
-    );
-  } else if (!signals.peerCandidateFound && !signals.peerNativeAddonFound) {
+  if (!signals.peerCandidateFound) {
     addEvidence(
       results,
       "browser_peer_authorization",
