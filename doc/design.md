@@ -137,7 +137,8 @@ out/
   - `patch-plugin-capabilities.js`
   - `patch-api-key-model-availability.js`
   - `patch-update-channel.js`
-- 支持 `--check` dry-run。
+- 支持 `--check` dry-run；check 模式先校验原始 `app.asar` 整体 SHA-256，再将其解包到 `.cache/` 下的临时快照，所有 patch 子进程通过受控工作根目录只读取该快照，结束后删除快照。
+- 非 check 模式清除临时快照工作根目录覆盖，只修改持久化 `_asar`。
 - 每个 patch 输出命中文件、规则名、替换数量。
 - 任一必需 patch 无匹配时失败。
 
@@ -180,9 +181,9 @@ out/
    - 将函数内 `X.authMethod !== "chatgpt"` 结构替换为 `!1`。
 
 2. 请求 tier 传递
-   - 对已人工复核的上游版本/build，先校验原始 `app.asar` SHA-256，并校验五个关键角色对应的一至多个模块在原始 ASAR、解包工作树和版本清单中的字节哈希完全一致。同一物理模块可以承担多个角色，但共享路径必须声明相同 SHA-256。
-   - 在哈希校验通过后，使用 AST 验证 Fast=`priority`、Standard=官方默认行为、UI setter、请求 resolver，以及 `start-conversation` 和 `start-turn-for-host` 两条请求链路。
-   - 已登记版本/build 如果出现未知 ASAR 哈希、模块哈希或结构变化，必须失败且不得回退到旧扫描逻辑。
+   - 对已人工复核的上游版本/build，先校验原始 `app.asar` 整体 SHA-256，并确认五个关键角色在原始 ASAR 与当前检查快照中的字节一致；模块级 SHA-256 保留为审计信息，不参与通过或失败判定。
+   - 在整体哈希校验通过后，使用 AST 验证 Fast=`priority`、Standard=官方默认行为、UI setter、请求 resolver，以及 `start-conversation` 和 `start-turn-for-host` 两条请求链路。
+   - 已登记版本/build 如果出现未知 ASAR 整体哈希或结构变化，必须失败且不得回退到旧扫描逻辑。
    - 未登记的上游版本先按稳定语义标记发现五个角色，要求 AST 组合唯一，并验证原始 ASAR 与解包工作树中被选模块的字节一致；bundle 文件名、无关代码和整体 raw hash 变化不需要预登记。
    - 自动发现缺失或歧义时回退到旧的结构化扫描兼容路径；若只能找到 UI gate，既找不到完整跨 bundle 链路，也找不到请求 payload 构造点或原生 tier 证据，patch 必须失败。
    - 通过版本绑定校验的请求层保持上游原生逻辑，且请求文本 patch 命中数必须为零。
@@ -190,7 +191,7 @@ out/
 验证策略：
 
 - 静态 dry-run 输出两类规则的匹配。
-- 输出校验来源（`reviewed-hash`、`structural` 或 `legacy`）；哈希/结构校验还输出上游版本/build、原始 ASAR 哈希、五个角色的 ASAR/工作树哈希，以及两条请求 action 的 AST 证据。
+- 输出校验来源（`reviewed-hash`、`structural` 或 `legacy`）；整体哈希/结构校验还输出上游版本/build、原始 ASAR 哈希、五个角色的审计哈希，以及两条请求 action 的 AST 证据。
 - 运行时可观察请求验证使用本地代理或 mock endpoint 捕获请求 payload，分别触发 Fast 和 Standard，确认 tier 不同。
 - 请求验证必须保存两条证据：`fast-request.json` 和 `standard-request.json`，其中 tier 字段分别可解析为 `fast` 或上游 Fast 等价值，以及 `standard` 或上游 Standard 等价值；当前上游 Fast 等价值为 `priority`。
 - 若上游字段从 `service_tier` 改名，patch 必须失败并提示人工复核。
@@ -207,13 +208,14 @@ out/
 - `goal_gate`：在 composer 相关 chunk 中保留 `mode !== "cloud"`，绕过 `/goal` 对 Statsig/config 的本地门控。
 - `feature_defaults`：将 browser/computer 直接依赖的默认 feature values 改为 true，包括 `browserPane`、`inAppBrowserUse`、`inAppBrowserUseAllowed`、`externalBrowserUse`、`externalBrowserUseAllowed`、`computerUse`、`computerUseNodeRepl`、`control`、`multiWindow`、`features.js_repl`。
 - `bundled_plugin_filter`：绕过 bundled plugin descriptor 中依赖 feature availability 的 `isAvailable` 过滤，使相关插件被纳入。
-- `browser_peer_authorization`：在 ad-hoc 或自签签名下绕过 browser-use native peer authorization 对 OpenAI Team ID 的硬编码检查。
+- `browser_peer_authorization`：兼容旧版 JavaScript Team ID 比较和新版 `browser-use-peer-authorization.node` 调用链；新版调用链通过 AST 定位 peer authorizer factory，并在加载原生模块前返回明确的 rebuild 授权结果，使 ad-hoc 或自签产物不依赖 OpenAI 代码签名身份。
 
 边界：
 
 - 不修改 i18n、DevTools、archive delete、sunset、GPU、updater disable 逻辑。
 - 不保证服务端或账号权限支持。
 - 每条规则都必须独立统计替换数量。
+- 扫描到 `browser-use-peer-authorization.node` 但既无法定位受支持的 factory、也没有已应用的 rebuild bypass 标记时，检查必须失败，不能按“上游已原生支持或不存在”处理。
 - `bundled_plugin_filter` 只能作用于 descriptor 列表中 plugin id 或 feature key 包含 `browser_use`、`browser_use_external`、`computer_use`、`control`、`js_repl` 的条目。
 - 如果上游 filter callback 无法在 AST 中关联到上述 plugin id 或 feature key，不能使用全局 `()=>!0` 替换，必须失败并提示人工复核。
 

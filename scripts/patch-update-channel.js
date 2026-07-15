@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 const path = require("node:path");
-const { FEED_URL, PUBLIC_KEY_PATH, SRC_DIR, PLATFORM } = require("./lib/constants");
+const { FEED_URL, PUBLIC_KEY_PATH } = require("./lib/constants");
 const { readText, writeText } = require("./lib/fs-utils");
+const { resolveAsarRoot } = require("./patch-util");
 
 const PUBLIC_KEY_SENTINEL = "ed25519-test-public-key-change-before-release";
 
@@ -32,7 +33,7 @@ function patchPackageJson(pkg, publicKey) {
 
 function run({
   check = false,
-  packagePath = path.join(SRC_DIR, PLATFORM, "_asar", "package.json"),
+  packagePath = path.join(resolveAsarRoot(), "package.json"),
   publicKeyPath = PUBLIC_KEY_PATH,
 } = {}) {
   const publicKey = readPublicKey(publicKeyPath);

@@ -21,6 +21,11 @@ function withTempFile(contents) {
   return file;
 }
 
+const NATIVE_PEER_AUTHORIZER_SOURCE = [
+  "var peerAuthEnv=`CODEX_BROWSER_USE_PEER_AUTHORIZATION`,peerAuthAddon=`browser-use-peer-authorization.node`;",
+  "function createPeerAuthorizer(){if(process.platform!==`darwin`)return()=>({authorized:!0});let metadata=buildFlavor.readFromPackageMetadata(),packaged=metadata!=null&&buildFlavor.shouldIncludeBrowserUsePeerAuthorization(metadata,process.platform),dev=!packaged&&peerAuthEnabled(process.env);if(!packaged&&!dev)return()=>({authorized:!0});let resources=dev?devResources:process.resourcesPath,addon=require(join(resources,`native`,peerAuthAddon));return socket=>{let fd=socketFd(socket);return fd==null?{authorized:!1,reason:`missing-socket-file-descriptor`}:addon.authorizeSocketPeer(fd,dev)}}",
+].join("\n");
+
 test("RED: current realistic anchors require bounded patches and evidence", () => {
   const file = fixturePath("plugin-capabilities-realistic.js");
   const source = fs.readFileSync(file, "utf8");
@@ -68,6 +73,35 @@ test("generic goal/config helper, Vercel team helper, and authMethod UI do not g
   ].join("\n");
   const patches = collectAllCapabilityPatches(source);
   assert.deepEqual(patches, []);
+});
+
+test("native browser peer authorizer factory is replaced with an explicit rebuild bypass", () => {
+  const patches = collectAllCapabilityPatches(NATIVE_PEER_AUTHORIZER_SOURCE);
+  const peerPatches = patches.filter(
+    (patch) => patch.id === "browser_peer_authorization",
+  );
+  assert.equal(peerPatches.length, 1);
+
+  const output = applyTextPatches(NATIVE_PEER_AUTHORIZER_SOURCE, patches);
+  assert.match(output, /codex-rebuild-browser-peer-authorization-bypass/);
+  assert.match(output, /return\(\)=>\(\{authorized:!0\}\)/);
+  assert.doesNotMatch(output, /authorizeSocketPeer/);
+
+  const summary = inspectCapabilityTargets({ files: [withTempFile(output)] });
+  assert.equal(summary.totals.browser_peer_authorization.patches, 0);
+  assert.equal(summary.totals.browser_peer_authorization.evidence, 1);
+  assert.ok(!summary.missingRules.includes("browser_peer_authorization"));
+});
+
+test("native browser peer authorization without a recognized factory or bypass fails closed", () => {
+  const file = withTempFile(
+    "const addon=`browser-use-peer-authorization.node`;function unknownPeerGate(socket){return inspectPeer(socket)}",
+  );
+  const summary = inspectCapabilityTargets({ files: [file] });
+
+  assert.equal(summary.totals.browser_peer_authorization.patches, 0);
+  assert.equal(summary.totals.browser_peer_authorization.evidence, 0);
+  assert.ok(summary.missingRules.includes("browser_peer_authorization"));
 });
 
 test("exported plugin catalog auth predicate is patched when called with authMethod", () => {

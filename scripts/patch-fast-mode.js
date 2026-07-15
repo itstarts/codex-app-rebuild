@@ -9,6 +9,7 @@ const {
   applyTextPatches,
   locateAsarAssetBundles,
   locateAsarBuildBundles,
+  resolveAsarRoot,
 } = require("./patch-util");
 const {
   verifyFastTierAttestation,
@@ -2330,7 +2331,7 @@ function logFastTierAttestation(attestation) {
   );
   for (const [role, record] of attestation.roles) {
     console.log(
-      `[fast-attestation] role=${role} path=${record.module.path} manifest=${record.module.sha256} asar=${record.originalSha256} work=${record.workSha256}`,
+      `[fast-attestation] role=${role} path=${record.module.path} audit=${record.module.sha256} asar=${record.originalSha256} work=${record.workSha256}`,
     );
   }
   for (const evidence of attestation.evidence) {
@@ -2347,8 +2348,14 @@ function runFastModePatch({
   metadata = readUpstreamMetadata(),
   manifests,
   projectRoot = PROJECT_ROOT,
+  workRoot,
 } = {}) {
-  const attestationOptions = { metadata, projectRoot };
+  const resolvedWorkRoot =
+    workRoot ??
+    (path.resolve(projectRoot) === PROJECT_ROOT
+      ? resolveAsarRoot()
+      : path.join(path.resolve(projectRoot), "src", PLATFORM, "_asar"));
+  const attestationOptions = { metadata, projectRoot, workRoot: resolvedWorkRoot };
   if (manifests !== undefined) {
     attestationOptions.manifests = manifests;
   }

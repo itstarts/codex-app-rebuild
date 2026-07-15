@@ -2,6 +2,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { SRC_DIR, PLATFORM } = require("./lib/constants");
 
+const PATCH_CHECK_ASAR_ROOT_ENV = "CODEX_REBUILD_PATCH_CHECK_ASAR_ROOT";
+
+function resolveAsarRoot(platform = PLATFORM, env = process.env) {
+  const override = env[PATCH_CHECK_ASAR_ROOT_ENV]?.trim();
+  return override ? path.resolve(override) : path.join(SRC_DIR, platform, "_asar");
+}
+
 function walkAst(node, visitor) {
   if (!node || typeof node !== "object") return;
   if (node.type) {
@@ -32,7 +39,7 @@ function applyTextPatches(source, patches) {
 }
 
 function locateAsarBuildBundles(platform = PLATFORM) {
-  const dir = path.join(SRC_DIR, platform, "_asar", ".vite", "build");
+  const dir = path.join(resolveAsarRoot(platform), ".vite", "build");
   if (!fs.existsSync(dir)) return [];
   return fs
     .readdirSync(dir)
@@ -41,7 +48,7 @@ function locateAsarBuildBundles(platform = PLATFORM) {
 }
 
 function locateAsarAssetBundles(platform = PLATFORM) {
-  const dir = path.join(SRC_DIR, platform, "_asar", "webview", "assets");
+  const dir = path.join(resolveAsarRoot(platform), "webview", "assets");
   if (!fs.existsSync(dir)) return [];
   return fs
     .readdirSync(dir)
@@ -50,8 +57,10 @@ function locateAsarAssetBundles(platform = PLATFORM) {
 }
 
 module.exports = {
+  PATCH_CHECK_ASAR_ROOT_ENV,
   walkAst,
   applyTextPatches,
+  resolveAsarRoot,
   locateAsarBuildBundles,
   locateAsarAssetBundles,
 };
