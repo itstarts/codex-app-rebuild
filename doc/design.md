@@ -208,14 +208,14 @@ out/
 - `goal_gate`：在 composer 相关 chunk 中保留 `mode !== "cloud"`，绕过 `/goal` 对 Statsig/config 的本地门控。
 - `feature_defaults`：将 browser/computer 直接依赖的默认 feature values 改为 true，包括 `browserPane`、`inAppBrowserUse`、`inAppBrowserUseAllowed`、`externalBrowserUse`、`externalBrowserUseAllowed`、`computerUse`、`computerUseNodeRepl`、`control`、`multiWindow`、`features.js_repl`。
 - `bundled_plugin_filter`：绕过 bundled plugin descriptor 中依赖 feature availability 的 `isAvailable` 过滤，使相关插件被纳入。
-- `browser_peer_authorization`：兼容旧版 JavaScript Team ID 比较和新版 `browser-use-peer-authorization.node` 调用链；新版调用链通过 AST 定位 peer authorizer factory，并在加载原生模块前返回明确的 rebuild 授权结果，使 ad-hoc 或自签产物不依赖 OpenAI 代码签名身份。
+- `browser_peer_authorization`：仅保留旧版 JavaScript Team ID 比较的兼容 patch；当前 `browser-use-peer-authorization.node` 及独立 Chrome Native Host 的代码签名校验保持上游行为，不做绕过。
 
 边界：
 
 - 不修改 i18n、DevTools、archive delete、sunset、GPU、updater disable 逻辑。
 - 不保证服务端或账号权限支持。
 - 每条规则都必须独立统计替换数量。
-- 扫描到 `browser-use-peer-authorization.node` 但既无法定位受支持的 factory、也没有已应用的 rebuild bypass 标记时，检查必须失败，不能按“上游已原生支持或不存在”处理。
+- ad-hoc 或自签产物不保证外部 Chrome 控制可用；该能力不得作为 release 完成条件。
 - `bundled_plugin_filter` 只能作用于 descriptor 列表中 plugin id 或 feature key 包含 `browser_use`、`browser_use_external`、`computer_use`、`control`、`js_repl` 的条目。
 - 如果上游 filter callback 无法在 AST 中关联到上述 plugin id 或 feature key，不能使用全局 `()=>!0` 替换，必须失败并提示人工复核。
 
